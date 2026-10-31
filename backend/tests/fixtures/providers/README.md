@@ -29,7 +29,7 @@ with a recorded response and note the recording date here.
 | boi_exchange_rates.recorded-2026-10-31.json | GET www.boi.org.il/PublicApi/GetExchangeRates | **recorded live 2026-10-31 via browser** (owner, Gaza, ~10:56–10:59 UTC) |
 | boi_sdmx_rer_usd_ils.browser-copy-2026-10-31.xml | GET edge.boi.org.il/.../RER_USD_ILS?startperiod=2026-10-20 (SDMX-ML 2.1 XML) | **browser copy, not byte-exact**; Series/Obs as copied, wrapper reconstructed |
 | coinbase_ticker.recorded-2026-10-31a.json / …b.json | GET /products/BTC-USD/ticker (two calls) | **recorded live 2026-10-31 via browser** |
-| coinbase_candles_1h.recorded-2026-10-31.partial.json | GET /products/BTC-USD/candles?granularity=3600 | **recorded live 2026-10-31 via browser**, first 3 of 300 rows only |
+| coinbase_candles_1h.recorded-2026-10-31.partial.json | GET /products/BTC-USD/candles?granularity=3600 | **recorded live 2026-10-31 via browser**, first 3 rows of the 350-row response (350 consecutive hours, no gaps) only |
 | twelvedata_time_series_1h_no_tz.recorded-2026-10-31.json | GET /time_series?symbol=USD/ILS&interval=1h&outputsize=5 **without timezone** | **recorded live 2026-10-31 via browser**; datetimes are NOT UTC |
 | twelvedata_api_usage.recorded-2026-10-31.json | GET /api_usage | **recorded live 2026-10-31 via browser** (Basic plan) |
 | twelvedata_time_series_1min.json | GET /time_series?interval=1min&timezone=UTC | written from docs, unverified |

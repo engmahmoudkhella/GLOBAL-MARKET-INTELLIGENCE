@@ -35,16 +35,18 @@ def boi_adapter():
 
 
 # --- B + C: exact recorded series ----------------------------------------------------------
-def test_recorded_boi_series_gap_on_tue_27_oct_only(db):
+def test_recorded_boi_series_27_oct_is_special_closure_not_a_gap(db):
+    """27 Oct 2026 = Knesset election day (special_closures seed): no missing_reference."""
     r = service.ingest_reference_rates(
         db, "USDILS", boi_adapter(), date(2026, 10, 20), date(2026, 10, 30)
     )
     assert r.ok and r.stored == 8
-    events = db.scalars(
-        select(DataQualityEvent).where(DataQualityEvent.event_type == "missing_reference")
-    ).all()
-    # Sat 24 and Sun 25 are not publication days; Tue 27 is, and is missing: one event, no fill.
-    assert [e.details_json["rate_date"] for e in events] == ["2026-10-27"]
+    assert (
+        db.scalars(
+            select(DataQualityEvent).where(DataQualityEvent.event_type == "missing_reference")
+        ).all()
+        == []
+    )
     assert (
         db.scalar(
             select(OfficialReferenceRate).where(
@@ -52,19 +54,136 @@ def test_recorded_boi_series_gap_on_tue_27_oct_only(db):
             )
         )
         is None
-    )
-    # Re-ingesting does not duplicate the gap event
+    )  # never filled
+
+
+def test_without_the_special_closure_27_oct_is_a_gap_then_explained(db):
+    db.execute(text("DELETE FROM special_closures WHERE closure_date = '2026-10-27'"))
+    db.commit()
+    try:
+        service.ingest_reference_rates(
+            db, "USDILS", boi_adapter(), date(2026, 10, 20), date(2026, 10, 30)
+        )
+        (ev,) = db.scalars(
+            select(DataQualityEvent).where(DataQualityEvent.event_type == "missing_reference")
+        ).all()
+        assert ev.details_json["rate_date"] == "2026-10-27" and ev.explanation_status is None
+    finally:
+        db.execute(
+            text(
+                "INSERT INTO special_closures (calendar, closure_date, reason, source_url) VALUES "
+                "('boi', '2026-10-27', 'Knesset election day - statutory day off (Basic Law: The "
+                "Knesset, section 10)', 'https://www.shibolet.com/?p=27864')"
+            )
+        )
+        db.commit()
+    # Next ingestion: the event is kept and explained, no new event is raised
     service.ingest_reference_rates(
         db, "USDILS", boi_adapter(), date(2026, 10, 20), date(2026, 10, 30)
     )
-    assert (
-        len(
-            db.scalars(
-                select(DataQualityEvent).where(DataQualityEvent.event_type == "missing_reference")
-            ).all()
+    db.expire_all()
+    (ev,) = db.scalars(
+        select(DataQualityEvent).where(DataQualityEvent.event_type == "missing_reference")
+    ).all()
+    assert ev.explanation_status == "explained"
+    assert ev.explanation.startswith("holiday: Knesset election day")
+    assert ev.explained_at is not None and ev.details_json["rate_date"] == "2026-10-27"
+
+
+def test_migration_reclassification_sql_explains_existing_event(db):
+    import importlib
+
+    mig = importlib.import_module("migrations.versions.0006_special_closures")
+    t = service.resolve(db, "USDILS", "boi")
+    db.add(
+        DataQualityEvent(
+            instrument_id=t.instrument.id,
+            provider_id=t.provider.id,
+            event_type="missing_reference",
+            severity="suspect",
+            message="no BoI representative rate for business day 2026-10-27",
+            detected_at=NOW,
+            details_json={"rate_date": "2026-10-27"},
         )
-        == 1
     )
+    db.commit()
+    db.execute(text(mig.EXPLAIN_SQL))
+    db.commit()
+    ev = db.scalar(select(DataQualityEvent))
+    assert ev.explanation_status == "explained" and "Knesset" in ev.explanation
+
+
+def test_special_closure_seed_and_source_required(db):
+    from app.models import SpecialClosure
+
+    (sc,) = db.scalars(select(SpecialClosure)).all()
+    assert (sc.calendar, sc.closure_date.isoformat()) == ("boi", "2026-10-27")
+    assert sc.source_url == "https://www.shibolet.com/?p=27864"
+    with pytest.raises(Exception):  # noqa: B017 - CHECK constraint on source_url
+        db.execute(
+            text(
+                "INSERT INTO special_closures (calendar, closure_date, reason, "
+                "source_url) VALUES ('boi', '2027-01-05', 'x', 'not a url')"
+            )
+        )
+    db.rollback()
+
+
+def test_boi_publication_observations_and_stats(db):
+    from app.ingestion.boi_stats import publication_stats
+
+    service.ingest_reference_rates(
+        db, "USDILS", boi_adapter(), date(2026, 10, 20), date(2026, 10, 30)
+    )
+    db.commit()
+    st = publication_stats(db)
+    # One observed lastUpdate (30 Oct 12:21:03 IST): far below 20 business days
+    assert st.business_days == 1 and not st.sufficient
+    assert st.median_local == "12:21:04" and st.configured_fallback == "12:30:00"
+
+
+def test_publication_stats_median_and_range_hand_checked(db):
+    from app.ingestion.boi_stats import publication_stats
+    from app.models import BoiPublicationObservation
+
+    # 20 business days: 12:10, 12:11, ... 12:29 Israel time (IST, UTC+2) in Nov 2026
+    days = [
+        d for d in (date(2026, 11, 2) + timedelta(days=i) for i in range(28)) if d.weekday() < 5
+    ][:20]
+    for i, d in enumerate(days):
+        at = datetime(d.year, d.month, d.day, 10, 10 + i, tzinfo=UTC)
+        db.add(BoiPublicationObservation(rate_date=d, published_at=at, first_observed_at=at))
+        # a later re-observation of the same date must not count twice
+        db.add(
+            BoiPublicationObservation(
+                rate_date=d,
+                published_at=at + timedelta(hours=3),
+                first_observed_at=at + timedelta(hours=3),
+            )
+        )
+    db.commit()
+    st = publication_stats(db)
+    assert st.business_days == 20 and st.sufficient
+    # median of 12:10..12:29 = (12:19 + 12:20) / 2 = 12:19:30
+    assert (st.median_local, st.earliest_local, st.latest_local) == (
+        "12:19:30",
+        "12:10:00",
+        "12:29:00",
+    )
+    assert st.configured_fallback == "12:30:00"  # never changed automatically
+
+
+def test_good_friday_is_reduced_liquidity_not_a_closure(db):
+    t = service.resolve(db, "XAUUSD", "twelvedata")
+    gf = datetime(2027, 3, 26, 14, 0, tzinfo=UTC)
+    assert t.calendar.is_open(gf)  # not a hard closure
+    assert [w.name for w in t.reduced_liquidity if w.start <= gf < w.end] == ["Good Friday"]
+    assert service.record_gaps(db, t, "1h", gf, gf + timedelta(hours=2)) == 1
+    db.commit()
+    ev = db.scalar(select(DataQualityEvent).where(DataQualityEvent.event_type == "missing_candle"))
+    assert ev.details_json["reduced_liquidity_day"] == "Good Friday"
+    usd = service.resolve(db, "USDILS", "twelvedata")  # FX calendar unaffected
+    assert usd.reduced_liquidity == ()
 
 
 def test_raw_attributes_stored_and_merged(db):

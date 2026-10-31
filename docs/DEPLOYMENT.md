@@ -86,3 +86,10 @@ docker compose run --rm api python -m app.cli backfill-reference --symbol USDILS
 ```
 
 Progress and failures show up in `/api/v1/admin/jobs` and `/api/v1/admin/providers`.
+
+Operator reports:
+
+```bash
+docker compose run --rm api python -m app.cli boi-publication-stats            # after 20 business days
+docker compose run --rm api python -m app.cli verify-holiday --day 2027-03-26  # Good Friday 2027, XAUUSD
+```

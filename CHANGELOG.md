@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Phase 2 – owner corrections, round 3 (2026-10-31)
+#### Added
+- `special_closures` (manual closures with source URL). Seed: 2026-10-27 Knesset election day (BoI calendar).
+- Explanations on data-quality events (`explanation_status`, `explanation`, `explained_at`). Gap events are never deleted.
+- `boi_publication_observations` and publication-time statistics (CLI and admin endpoint, report only).
+- XAU Good Friday / Easter Monday 2027–2028 as reduced liquidity (`market_holidays.kind`), annotated on gaps. CLI `verify-holiday`.
+- Migration `0006_special_closures`.
+#### Fixed
+- Docs wrongly reported about 50 missing Coinbase hours. The owner's full file has 350 consecutive hours with no gaps.
+
+
 ### Phase 2 – owner recordings A–I, CoinGecko, Binance, holidays (2026-10-31)
 #### Added
 - CoinGecko Demo adapter (BTC/USD reference, header key, monthly budget validation, Coinbase cross-check, UI attribution).

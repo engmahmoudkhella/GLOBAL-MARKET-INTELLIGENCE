@@ -91,6 +91,7 @@ class DataQualityEvent(Base):
     __tablename__ = "data_quality_events"
     __table_args__ = (
         CheckConstraint("severity IN ('reject','suspect','info')", name="severity"),
+        CheckConstraint("explanation_status IN ('explained')", name="explanation_status"),
         Index("ix_dq_events_instrument_detected", "instrument_id", "detected_at"),
     )
 
@@ -110,6 +111,10 @@ class DataQualityEvent(Base):
     details_json: Mapped[dict[str, Any]] = mapped_column(
         JSONB, nullable=False, server_default=text("'{}'::jsonb")
     )
+    # Events are never deleted; an explanation is added instead (e.g. "holiday: ...").
+    explanation_status: Mapped[str | None] = mapped_column(String(20))
+    explanation: Mapped[str | None] = mapped_column(Text)
+    explained_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class OfficialReferenceRate(Base):
@@ -147,6 +152,7 @@ class MarketHoliday(Base):
     __table_args__ = (
         CheckConstraint("closed_until > closed_from", name="closed_range"),
         CheckConstraint("calendar IN ('fx','xau','boi')", name="calendar"),
+        CheckConstraint("kind IN ('closure','reduced_liquidity')", name="kind"),
         UniqueConstraint("calendar", "closed_from", name="uq_market_holiday"),
     )
 
@@ -159,6 +165,43 @@ class MarketHoliday(Base):
     is_assumption: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default=text("true")
     )
+    # 'closure' = market closed; 'reduced_liquidity' = open, possibly thin or closed (not
+    # applied as a closure; used to annotate gaps).
+    kind: Mapped[str] = mapped_column(String(20), nullable=False, server_default="closure")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+
+class SpecialClosure(Base):
+    """Manual, non-algorithmic closures (election days, one-off government holidays)."""
+
+    __tablename__ = "special_closures"
+    __table_args__ = (
+        CheckConstraint("calendar IN ('fx','xau','boi')", name="calendar"),
+        CheckConstraint("source_url LIKE 'http%'", name="source_url"),
+        UniqueConstraint("calendar", "closure_date", name="uq_special_closure"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    calendar: Mapped[str] = mapped_column(String(20), nullable=False)
+    closure_date: Mapped[date] = mapped_column(Date, nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    source_url: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class BoiPublicationObservation(Base):
+    """Every distinct BoI `lastUpdate` observed, to learn the real publication time."""
+
+    __tablename__ = "boi_publication_observations"
+    __table_args__ = (
+        UniqueConstraint("rate_date", "published_at", name="uq_boi_publication_observation"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    rate_date: Mapped[date] = mapped_column(Date, nullable=False)
+    published_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    first_observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

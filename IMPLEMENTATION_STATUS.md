@@ -104,13 +104,30 @@ Last updated: 2026-10-31 (Phase 2 groundwork). Phase numbering follows the appro
 - Backend: **222 passed** (unit + integration on TimescaleDB). ruff and mypy --strict clean. Real-trading guard clean.
 - Frontend: Playwright **20 passed**.
 
+## Owner corrections 2026-10-31 (round 3)
+
+| Item | Code / docs | Tests (`backend/tests/integration/test_recorded_findings.py`) |
+|---|---|---|
+| Coinbase 350 consecutive hours, no gaps | The ~50-missing-hours notes were removed from DATA_SOURCES, STATUS and the fixture README. The gap detector is unchanged. | — |
+| 27 Oct = Knesset election day | `special_closures` table and seed (migration 0006). `calendars.closure_windows`. `service.explain_reference_gaps`. Migration reclassifies existing events. | `test_recorded_boi_series_27_oct_is_special_closure_not_a_gap`, `test_without_the_special_closure_27_oct_is_a_gap_then_explained`, `test_migration_reclassification_sql_explains_existing_event`, `test_special_closure_seed_and_source_required` |
+| Learn the BoI publication time | `boi_publication_observations`. `ingestion/boi_stats.py`. CLI `boi-publication-stats`. `GET /api/v1/admin/boi-publication-stats`. The fallback is never auto-changed. | `test_boi_publication_observations_and_stats`, `test_publication_stats_median_and_range_hand_checked` |
+| XAU Good Friday / Easter Monday | `market_holidays.kind='reduced_liquidity'` (2027–2028, assumption). Gaps annotated. CLI `verify-holiday`. | `test_good_friday_is_reduced_liquidity_not_a_closure` |
+| BoI own calendar authoritative | Documented in DATA_SOURCES.md (to replace computed dates once fetchable) | — |
+| 0.77 % on 30 Oct expected | Documented. Threshold 0.5 % and window ±15 min unchanged. | — |
+
+Tests (local): backend **228 passed**; ruff and mypy --strict clean.
+
+## Status: HOLD
+
+**No new features until Phase 2 is verified live on the VPS** (owner instruction, 2026-10-31).
+
 ## Open items needing the owner
 
-- **Twelve Data Grow:** switch from Basic to Grow $29 before enabling ingestion on the VPS. Set `GMI_TWELVEDATA_CREDITS_PER_MINUTE=55` and `..._PER_DAY=0`.
-- **BoI fallback publication time** 12:30 Israel time is based on one observation (12:21). Please confirm over a few days.
-- **Holiday assumptions:** confirm the FX/gold closures (25 Dec, 1 Jan) against Twelve Data behaviour, and the BoI rest-day list.
-- **Coinbase 1h candles:** the recorded 300 rows span 349 hours (about 50 missing). Please re-check from the VPS.
-- **Re-record raw** from the VPS: BoI SDMX XML (byte-exact), CoinGecko, Binance, Coinbase book/product/time.
-- **O1:** resolved. Use mid when bid/ask exist, otherwise last price, and record `price_type`.
-- **G5:** read the Coinbase Market Data Terms of Use.
-- **G6/G7 + live contracts:** once the Frankfurt VPS exists, run `scripts/check_provider_reachability.py` and `scripts/check_provider_contracts.py --save recorded/` and send the output.
+- **VPS run (blocking Phase 2 acceptance):** provision the Frankfurt VPS, then run `scripts/check_provider_reachability.py` and
+  `scripts/check_provider_contracts.py --save recorded/`, and send the output. This verifies Coinbase book/product/time, CoinGecko,
+  Binance and a byte-exact BoI SDMX recording.
+- **Twelve Data Grow** before live ingestion (`GMI_TWELVEDATA_CREDITS_PER_MINUTE=55`, `..._PER_DAY=0`).
+- **BoI publication time:** after 20 business days of live ingestion, run `boi-publication-stats` and report the median and range
+  here. The owner then decides the fallback.
+- **Good Friday 26 Mar 2027:** run `verify-holiday --day 2027-03-26` on XAUUSD Twelve Data data to confirm or reject the reduced-liquidity assumption.
+- **BoI non-publication calendar:** fetch BoI's own list from the VPS, if published, to replace the computed dates.

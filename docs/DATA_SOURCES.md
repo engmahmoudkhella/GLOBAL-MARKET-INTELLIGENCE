@@ -54,9 +54,9 @@ representative rate. A difference above **0.5 %** (`GMI_BOI_CROSSCHECK_THRESHOLD
 | `currentExchangeRate`, `currentChange` are **JSON numbers** | Parsed with `parse_float=Decimal` from the raw text, never via float. Strings are rejected as a contract change. |
 | `unit` (JPY = 100, LBP = 10) | Rate stored **per 1 unit** (`rate / unit`). The published rate and unit are kept raw in `attributes_json`. |
 | `currentChange` is a **percentage** | Stored raw as `current_change_pct`. Not interpreted. |
-| `lastUpdate` 2026-10-30T10:21:03Z = **12:21 Israel time** | Used as `published_at`. For history without timestamps, `GMI_BOI_PUBLICATION_FALLBACK_TIME` (default **12:30 Asia/Jerusalem, assumption**) is used. The cross-check window follows it. |
+| `lastUpdate` 2026-10-30T10:21:03Z = **12:21 Israel time** | Used as `published_at`. **Every distinct `lastUpdate` is stored** (`boi_publication_observations`). For history without timestamps, `GMI_BOI_PUBLICATION_FALLBACK_TIME` (default **12:30 Asia/Jerusalem, assumption**) is used, and the cross-check window follows it. After 20 business days, the median and range are reported (`boi-publication-stats`) and the owner decides the fallback. It is **never changed automatically**. |
 | Observations Mon–Fri only (Fri 23 and Fri 30 Oct present, Sat and Sun absent) | Publication calendar = Monday–Friday minus `boi` holidays. |
-| **Tue 27 Oct 2026 missing** with no known reason (not an Israeli holiday) | Recorded as a `missing_reference` event. **Never filled.** |
+| **Tue 27 Oct 2026 missing**: **Knesset election day**, a statutory day off (Basic Law: The Knesset, s.10; source https://www.shibolet.com/?p=27864) | Seeded in `special_closures` for the `boi` calendar. Not expected, so no new gap is raised. An earlier `missing_reference` event for that day is **kept and marked "explained: holiday"**. Never filled. |
 | SDMX `RELEASE_STATUS="YP"`, series attributes (`DATA_SOURCE`, `TIME_COLLECT`, …) | Stored raw in `attributes_json`. Not interpreted. |
 | SDMX schemaLocation references `edge.boi.gov.il` | The reachability script checks `www.boi.org.il`, `edge.boi.org.il` and `edge.boi.gov.il`. |
 | The XML sample is a **browser copy, not byte-exact** | Used for structure only. Re-record raw from the VPS (`check_provider_contracts.py --save`). |
@@ -65,11 +65,12 @@ representative rate. A difference above **0.5 %** (`GMI_BOI_CROSSCHECK_THRESHOLD
 
 - Ticker `bid`/`ask`/`price` are **strings**, so BTC gets a true mid. `time` arrives with **9 or 6** fractional digits (both handled).
   Unknown extra fields (e.g. `rfq_volume`) are ignored and **logged once**. Required fields are strict.
-- Candles: rows are **[time, LOW, HIGH, OPEN, CLOSE, volume]**, JSON numbers, newest first, 300 rows. Columns are mapped by position, and
+- Candles: rows are **[time, LOW, HIGH, OPEN, CLOSE, volume]**, JSON numbers, newest first. Columns are mapped by position, and
   `low ≤ open, close ≤ high` is asserted (a violation means the column order changed, so the response is rejected).
 - The current hour is incomplete. **Any candle ending after the response time is dropped**, for every provider.
-- The recorded 300-row response spans 349 hours (1792184400 → 1793440800), so **about 50 hours appear to be missing**. Re-check from the VPS.
-  The gap detector reports such gaps and never fills them.
+- The recorded hourly response (no start/end parameters) had **350 rows, 1793440800 back to 1792184400: 350 consecutive hourly
+  buckets with no gaps** (owner check of the full file). The documentation states a 300-bucket maximum; the adapter still requests at
+  most 300 buckets per call, which is safe either way.
 
 ## Twelve Data notes (owner recordings 2026-10-31, continued)
 
@@ -77,14 +78,25 @@ representative rate. A difference above **0.5 %** (`GMI_BOI_CROSSCHECK_THRESHOLD
   The adapter always sends `timezone=UTC` and **rejects a response whose bars start in the future**.
 - `/api_usage` reports `plan_limit` (8), `plan_daily_limit` (800) and `plan_category` ("basic"). **Celery Beat verifies the real plan
   at startup** and refuses to start if the configured limits exceed it, or the schedule does not fit it.
-- Observation: on 30 Oct the BoI rate was 3.118, while Twelve Data's close and last price were about 3.141–3.142, **about 0.77 %**
-  above. These are not same-time prices, but the 0.5 % cross-check may fire once both feeds run.
+- On 30 Oct the BoI rate was 3.118, while Twelve Data's close and last price were about 3.141–3.142 (**about 0.77 %**). This is
+  **expected**: BoI fixed at 10:21 UTC on Friday, while Twelve Data's close is the New York close. The cross-check compares only
+  prices within ±15 min of the BoI publication, with a 0.5 % threshold (both kept, owner decision).
 
 ## Holiday calendars
 
 Stored in `market_holidays`. **Every seeded row is flagged `is_assumption`** until confirmed by observed data:
-- `fx`, `xau`: 25 Dec 2026, 1 Jan 2027 and 25 Dec 2028. The session day ending 17:00 New York on that date is closed.
-- `boi`: Israeli full rest days 2026–2028 falling on weekdays, computed with `pyluach` plus the statutory Yom HaAtzmaut rules.
+- `fx`, `xau`: 25 Dec 2026, 1 Jan 2027 and 25 Dec 2028 (confirmed acceptable by the owner). The session day ending 17:00
+  New York on that date is closed.
+- `xau` **reduced liquidity / possible closure (not a closure)**: Good Friday and Easter Monday (London bullion holidays)
+  2027 and 2028 (`kind = reduced_liquidity`). The market stays open in the calendar, and any gap on those days is annotated
+  `reduced_liquidity_day`. **Assumption, to be verified against real Twelve Data data on Good Friday, 26 Mar 2027**
+  (`app.cli verify-holiday --day 2027-03-26`).
+- `boi`: Israeli full rest days 2026–2028 falling on weekdays, computed with `pyluach` plus the statutory Yom HaAtzmaut rules
+  (accepted by the owner).
+- **Special closures** (`special_closures`): manual, non-algorithmic closures (election days, one-off government holidays), each
+  with a date, calendar key, reason and **source URL**. Seed: 2026-10-27 (`boi`), Knesset election day.
+- **Authority:** where the Bank of Israel publishes its own non-publication calendar, **that list is authoritative** and should
+  replace the computed dates once it can be fetched from the VPS. Until then the computed list plus special closures applies.
 
 Holidays make the market closed for out-of-session checks, gap detection, derived candles and the BoI publication calendar.
 

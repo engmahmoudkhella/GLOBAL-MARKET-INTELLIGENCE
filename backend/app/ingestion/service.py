@@ -21,9 +21,10 @@ from sqlalchemy.orm import Session
 
 from app.core.clock import utcnow
 from app.instruments.config_schema import InstrumentConfig
-from app.markets.calendars import market_calendar
+from app.markets.calendars import NamedWindow, market_calendar, reduced_liquidity_windows
 from app.markets.sessions import MarketCalendar
 from app.models import (
+    BoiPublicationObservation,
     DataQualityEvent,
     Instrument,
     InstrumentProviderSymbol,
@@ -54,6 +55,7 @@ class Target:
     provider_symbol: str
     config: InstrumentConfig
     calendar: MarketCalendar
+    reduced_liquidity: tuple[NamedWindow, ...] = ()
 
 
 @dataclass
@@ -81,7 +83,14 @@ def resolve(session: Session, symbol: str, provider_name: str) -> Target:
         raise LookupError(f"{provider_name} is not mapped to {symbol}")
     inst, prov, mapping = row
     cfg = InstrumentConfig.model_validate(inst.configuration_json)
-    return Target(inst, prov, mapping.provider_symbol, cfg, market_calendar(session, cfg))
+    return Target(
+        inst,
+        prov,
+        mapping.provider_symbol,
+        cfg,
+        market_calendar(session, cfg),
+        tuple(reduced_liquidity_windows(session, cfg.sessions.holiday_calendar)),
+    )
 
 
 # ------------------------------------------------------------------ provider health
@@ -391,7 +400,11 @@ def record_gaps(session: Session, t: Target, timeframe: str, start: datetime, en
         )
         if exists is None:
             issue = QualityIssue(
-                g.type, g.severity, g.message, g.at, {**g.details, "timeframe": timeframe}
+                g.type,
+                g.severity,
+                g.message,
+                g.at,
+                {**g.details, "timeframe": timeframe, **_reduced_liquidity(t, ws, we)},
             )
             _event(
                 session,
@@ -422,6 +435,16 @@ def ingest_reference_rates(
         if include_latest and latest_fn is not None:
             rates.append(latest_fn(t.provider_symbol))
         for r in rates:
+            if r.published_at is not None:
+                session.execute(
+                    insert(BoiPublicationObservation)
+                    .values(
+                        rate_date=r.rate_date,
+                        published_at=r.published_at,
+                        first_observed_at=r.received_at,
+                    )
+                    .on_conflict_do_nothing()
+                )
             existing = session.scalar(
                 select(OfficialReferenceRate).where(
                     OfficialReferenceRate.instrument_id == t.instrument.id,
@@ -480,9 +503,12 @@ def ingest_reference_rates(
 
 
 def record_reference_gaps(session: Session, t: Target, start: date, end: date) -> int:
-    """Expected BoI publication days (Mon-Fri minus 'boi' holidays) up to the latest stored
-    rate that have no rate. Recorded once per day as `missing_reference`; never filled."""
+    """Expected BoI publication days (Mon-Fri minus 'boi' holidays and special closures) up
+    to the latest stored rate that have no rate. Recorded once per day as `missing_reference`;
+    never filled. Existing events whose day is now a known closure are explained first."""
     from app.markets.calendars import boi_publication_days, israel_day_start
+
+    explain_reference_gaps(session, t)
 
     stored = set(
         session.scalars(
@@ -624,3 +650,37 @@ def record_staleness(
             )
             session.commit()
     return f
+
+
+def explain_reference_gaps(session: Session, t: Target) -> int:
+    """Add an explanation to unexplained `missing_reference` events whose day is a known BoI
+    closure (holiday or special closure). Events are kept, never deleted."""
+    from app.markets.calendars import boi_closed_days
+
+    closed = boi_closed_days(session)
+    n = 0
+    for ev in session.scalars(
+        select(DataQualityEvent).where(
+            DataQualityEvent.instrument_id == t.instrument.id,
+            DataQualityEvent.provider_id == t.provider.id,
+            DataQualityEvent.event_type == IssueType.MISSING_REFERENCE.value,
+            DataQualityEvent.explanation_status.is_(None),
+        )
+    ):
+        day = date.fromisoformat(str(ev.details_json.get("rate_date")))
+        if day in closed:
+            ev.explanation_status = "explained"
+            ev.explanation = f"holiday: {closed[day]}"
+            ev.explained_at = utcnow()
+            n += 1
+    return n
+
+
+def _reduced_liquidity(t: Target, start: datetime | None, end: datetime | None) -> dict[str, str]:
+    """Annotate a candle gap overlapping a reduced-liquidity day (e.g. Good Friday for XAU)."""
+    if start is None or end is None:
+        return {}
+    for w in t.reduced_liquidity:
+        if w.start < end and start < w.end:
+            return {"reduced_liquidity_day": w.name}
+    return {}

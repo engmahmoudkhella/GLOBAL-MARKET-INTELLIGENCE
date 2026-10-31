@@ -108,6 +108,18 @@ E: XML sample is a browser copy (structure only). F: Coinbase ticker strings, 6/
 G: Coinbase candle column order asserted, incomplete candles dropped. H: Twelve Data time_series must be UTC, future bars rejected.
 I: Twelve Data plan read from `/api_usage` and verified at beat startup.
 
+### 0.2d Owner corrections and answers (2026-10-31)
+
+1. Coinbase hourly response: **350 consecutive rows, no gaps** (the earlier "about 50 missing hours" note was wrong and has been removed).
+2. 27 Oct 2026 = Knesset election day. A `special_closures` table holds manual closures (date, calendar, reason, source URL).
+   The existing gap event is kept and marked "explained: holiday". Gap detection consults special closures.
+3. 12:30 fallback kept. Every BoI `lastUpdate` is stored, and after 20 business days the median and range are reported for the
+   owner to decide. FX/gold 25 Dec and 1 Jan accepted. XAU Good Friday and Easter Monday are **reduced liquidity / possible
+   closure**, not hard closures, to be verified on 26 Mar 2027. Computed Israeli rest days are accepted plus special closures;
+   BoI's own calendar, when fetchable, is authoritative.
+4. The 0.77 % Twelve Data vs BoI difference on 30 Oct is expected (10:21 UTC fix vs New York close). Threshold 0.5 % and window ±15 min kept.
+5. **Hold: no new features until Phase 2 is verified live on the VPS.**
+
 ### 0.3 Phase 2 entry gates (must be verified before Phase 2 code depends on them)
 
 A pre-check on 2026-10-31 used web-search snippets only, because the provider sites were not reachable from the build sandbox. It found:

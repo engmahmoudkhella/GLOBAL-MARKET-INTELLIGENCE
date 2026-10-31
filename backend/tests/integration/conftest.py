@@ -67,7 +67,7 @@ def db(database_url: str) -> Iterator[Session]:
             text(
                 "TRUNCATE users, user_sessions, system_audit_logs, job_runs, "
                 "market_quotes, market_candles, data_quality_events, "
-                "official_reference_rates RESTART IDENTITY CASCADE"
+                "official_reference_rates, boi_publication_observations RESTART IDENTITY CASCADE"
             )
         )
         c.execute(

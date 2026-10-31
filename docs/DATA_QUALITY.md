@@ -23,11 +23,11 @@ and applied by `backend/app/ingestion/service.py`. Every stored quote and candle
 | Duplicate | suspect | Same candle returned twice in one response (flagged as conflicting if values differ) |
 | Outlier | suspect | Return vs previous close more than **10 × 1.4826 × MAD** from the median of the last ≤100 returns. Needs at least 21 prior verified prices. **Abstains when MAD = 0** (flat series). |
 | Abnormal spread | suspect | Spread above the instrument's `max_spread_bps` if configured. Otherwise more than **10 × the median** of the last ≥20 verified spreads. No fixed spread limit is guessed for any instrument. |
-| Missing candles | suspect (event) | Expected intraday bars absent **while the market is open** per the instrument's session calendar. Consecutive gaps are reported once as a window and never re-reported. |
+| Missing candles | suspect (event) | Expected intraday bars absent **while the market is open** per the instrument's session calendar. Consecutive gaps are reported once as a window and never re-reported. On a reduced-liquidity day (e.g. Good Friday for XAU) the event carries `reduced_liquidity_day`. |
 | **Out of session** | suspect | Quote observed, or intraday candle lying entirely, outside the instrument's session calendar. **Provider "market open" flags are ignored.** The provider flag is kept in the event details for audit. Excluded from indicators, candles, forecasts and evaluation. The UI shows it separately as "excluded – market closed / weekend". |
 | Incomplete source | suspect | A derived 4h/1d bar is missing ≥1 expected verified 1h source bar. It is rebuilt automatically when the missing bars arrive. |
 | Reference divergence | suspect (event) | Twelve Data USD/ILS near BoI publication differs from the BoI representative rate by more than the threshold (default 0.5 %) |
-| Missing reference rate | suspect (event) | An expected BoI publication day (Monday–Friday minus `boi` holidays, up to the latest stored rate) has no rate. One event per day. Never filled. |
+| Missing reference rate | suspect (event) | An expected BoI publication day (Monday–Friday minus `boi` holidays and **special closures**, up to the latest stored rate) has no rate. One event per day. Never filled. If the day later becomes a known closure, the event is **kept and marked `explained`** (`explanation = "holiday: …"`). |
 | Incomplete candle | dropped | A candle ending after the response time is still forming and is not stored |
 | Unknown provider field | log (once) | Extra fields are ignored. Required fields and their types stay strict. |
 | Stale | suspect (event) | No verified quote newer than `staleness_seconds` while the market is open. At most one event per hour per instrument. |

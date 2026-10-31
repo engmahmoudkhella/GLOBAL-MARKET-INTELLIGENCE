@@ -84,6 +84,16 @@ def jobs(page: PageParams = Depends(page_params), db: Session = Depends(get_db))
     return Page[JobRunOut](items=items, total=total, limit=page.limit, offset=page.offset)
 
 
+@router.get("/boi-publication-stats")
+def boi_publication_stats(db: Session = Depends(get_db)) -> dict[str, Any]:
+    """Observed BoI publication times (report only; the fallback is never auto-changed)."""
+    from dataclasses import asdict
+
+    from app.ingestion.boi_stats import publication_stats
+
+    return asdict(publication_stats(db))
+
+
 @router.get("/system-health")
 def system_health() -> dict[str, Any]:
     return readiness()

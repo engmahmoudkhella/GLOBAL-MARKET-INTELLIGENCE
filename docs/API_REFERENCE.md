@@ -19,6 +19,7 @@ Authentication uses the session cookie set by login. Every non-GET request needs
 | GET | `/api/v1/markets/{symbol}/reference-rates?start=&end=` | session | Official reference rates (USDILS: Bank of Israel representative rate). These are not executable prices. |
 | GET | `/api/v1/admin/providers` | admin | Provider status, licence notes and attribution (never credentials or raw config) |
 | GET | `/api/v1/admin/jobs?limit=&offset=` | admin | Paginated `job_runs` (limit ≤ 200) |
+| GET | `/api/v1/admin/boi-publication-stats` | admin | Observed BoI publication times: business days observed (of 20 required), median, earliest and latest (Israel local), configured fallback. Report only. |
 | GET | `/api/v1/admin/system-health` | admin | Detailed readiness (TimescaleDB version, migration revision) |
 
 Error codes: `not_authenticated` (401), `forbidden` (403, including a missing CSRF token), `not_found` (404),

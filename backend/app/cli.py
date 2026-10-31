@@ -143,5 +143,58 @@ def backfill_reference(
         raise typer.Exit(1)
 
 
+@cli.command("boi-publication-stats")
+def boi_publication_stats() -> None:
+    """Median and range of observed BoI publication times (Israel local). Report only."""
+    from app.ingestion.boi_stats import publication_stats
+
+    with get_sessionmaker()() as session:
+        st = publication_stats(session)
+    verdict = "sufficient" if st.sufficient else "INSUFFICIENT - do not decide yet"
+    typer.echo(f"business days observed: {st.business_days}/{st.required} ({verdict})")
+    typer.echo(f"period: {st.first_date} .. {st.last_date}")
+    typer.echo(
+        f"median {st.median_local}, range {st.earliest_local} - {st.latest_local} "
+        f"(Asia/Jerusalem); configured fallback {st.configured_fallback} (unchanged)"
+    )
+
+
+@cli.command("verify-holiday")
+def verify_holiday(
+    symbol: str = typer.Option("XAUUSD"),
+    provider: str = typer.Option("twelvedata"),
+    day: str = typer.Option(..., help="Session day (YYYY-MM-DD), e.g. 2027-03-26"),
+) -> None:
+    """Report what data actually exists for a session day ending 17:00 New York on `day`
+    (used to confirm or reject holiday assumptions such as Good Friday for XAUUSD)."""
+    from datetime import date
+
+    from sqlalchemy import func, select
+
+    from app.ingestion import service
+    from app.markets.calendars import special_closure_window
+    from app.models import MarketCandle, MarketQuote
+
+    start, end = special_closure_window("xau", date.fromisoformat(day))
+    with get_sessionmaker()() as session:
+        t = service.resolve(session, symbol, provider)
+        for label, model, col in (
+            ("1h candles", MarketCandle, MarketCandle.open_time),
+            ("quotes", MarketQuote, MarketQuote.observed_at),
+        ):
+            stmt = select(model.data_quality_status, func.count()).where(
+                model.instrument_id == t.instrument.id,
+                model.provider_id == t.provider.id,
+                col >= start,
+                col < end,
+            )
+            if model is MarketCandle:
+                stmt = stmt.where(MarketCandle.timeframe == "1h")
+            counts = dict(session.execute(stmt.group_by(model.data_quality_status)).all())
+            typer.echo(f"{symbol} {label} {start.isoformat()} .. {end.isoformat()}: {counts}")
+        flagged = [w.name for w in t.reduced_liquidity if w.start < end and start < w.end]
+        typer.echo(f"calendar marks this day as: {flagged or 'normal session'}")
+
+
 if __name__ == "__main__":
     cli()
