@@ -115,3 +115,24 @@ def check_against_plan(
         actual.limit_per_day,
         msg,
     )
+
+
+def check_coingecko_budget(
+    interval_seconds: int, per_minute: int, per_month: int, headroom: Decimal
+) -> str | None:
+    """Returns an error message if polling every `interval_seconds` exceeds the Demo plan
+    (worst case: 31-day month). None when it fits."""
+    calls_min = math.ceil(60 / interval_seconds)
+    calls_month = math.ceil(31 * 86400 / interval_seconds)
+    problems = []
+    if calls_min > per_minute * headroom:
+        problems.append(f"{calls_min} calls/min > {per_minute * headroom}")
+    if calls_month > per_month * headroom:
+        problems.append(f"{calls_month} calls/month > {per_month * headroom}")
+    if problems:
+        return (
+            "CoinGecko schedule does not fit the configured plan: "
+            + "; ".join(problems)
+            + ". Increase GMI_COINGECKO_QUOTE_INTERVAL_SECONDS."
+        )
+    return None

@@ -142,3 +142,93 @@ def crosscheck_boi(
         )
         session.commit()
     return CrossCheck(rate_date, status, ref.rate, ref_time, price, observed, source, diff)
+
+
+@dataclass(frozen=True)
+class QuoteCrossCheck:
+    status: Literal["ok", "diverged", "no_primary_price", "no_reference_price"]
+    reference_price: Decimal | None = None
+    primary_price: Decimal | None = None
+    diff_pct: Decimal | None = None
+
+
+def crosscheck_reference_quote(
+    session: Session,
+    symbol: str,
+    reference_provider: str,
+    *,
+    threshold_pct: Decimal | None = None,
+    window_seconds: int | None = None,
+) -> QuoteCrossCheck:
+    """Compare the newest verified reference quote (e.g. CoinGecko) with the nearest verified
+    primary quote (e.g. Coinbase mid) within +/- window. Divergence above the threshold is
+    recorded as `reference_divergence`; neither source is overwritten."""
+    s = get_settings()
+    threshold = threshold_pct if threshold_pct is not None else s.coingecko_crosscheck_threshold_pct
+    window = timedelta(seconds=window_seconds or s.coingecko_crosscheck_window_seconds)
+    ref = resolve(session, symbol, reference_provider)
+    ref_q = session.scalar(
+        select(MarketQuote)
+        .where(
+            MarketQuote.instrument_id == ref.instrument.id,
+            MarketQuote.provider_id == ref.provider.id,
+            MarketQuote.data_quality_status == "verified",
+        )
+        .order_by(MarketQuote.observed_at.desc())
+        .limit(1)
+    )
+    if ref_q is None or ref_q.last_price is None:
+        return QuoteCrossCheck("no_reference_price")
+    from app.models import InstrumentProviderSymbol
+
+    primary_id = session.scalar(
+        select(InstrumentProviderSymbol.provider_id).where(
+            InstrumentProviderSymbol.instrument_id == ref.instrument.id,
+            InstrumentProviderSymbol.purpose == "primary",
+        )
+    )
+    at = ref_q.observed_at
+    p = session.scalar(
+        select(MarketQuote)
+        .where(
+            MarketQuote.instrument_id == ref.instrument.id,
+            MarketQuote.provider_id == primary_id,
+            MarketQuote.data_quality_status == "verified",
+            MarketQuote.observed_at >= at - window,
+            MarketQuote.observed_at <= at + window,
+        )
+        .order_by(
+            func.abs(
+                func.extract("epoch", MarketQuote.observed_at) - func.extract("epoch", literal(at))
+            )
+        )
+        .limit(1)
+    )
+    if p is None:
+        return QuoteCrossCheck("no_primary_price", ref_q.last_price)
+    primary_price = p.mid if p.mid is not None else p.last_price
+    assert primary_price is not None
+    diff = (abs(ref_q.last_price - primary_price) / primary_price * 100).quantize(Decimal("0.0001"))
+    if diff <= threshold:
+        return QuoteCrossCheck("ok", ref_q.last_price, primary_price, diff)
+    _event(
+        session,
+        QualityIssue(
+            IssueType.REFERENCE_DIVERGENCE,
+            "suspect",
+            f"{reference_provider} {symbol} differs from the primary source by {diff}%",
+            at,
+            {
+                "reference_provider": reference_provider,
+                "reference_price": ref_q.last_price,
+                "primary_price": primary_price,
+                "threshold_pct": threshold,
+                "diff_pct": diff,
+            },
+        ),
+        instrument_id=ref.instrument.id,
+        provider_id=ref.provider.id,
+        now=utcnow(),
+    )
+    session.commit()
+    return QuoteCrossCheck("diverged", ref_q.last_price, primary_price, diff)

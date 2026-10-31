@@ -151,12 +151,28 @@ def boi_crosscheck(days: int = 3) -> str:
     return ",".join(results)
 
 
+@celery_app.task(name="gmi.ingest.reference_quote")  # type: ignore[untyped-decorator]
+def ingest_reference_quote(symbol: str, provider: str, interval_seconds: int) -> str:
+    """Independent reference quote (CoinGecko) + divergence check against the primary."""
+
+    def body(session: Any, now: datetime) -> dict[str, Any]:
+        adapter = registry.create(provider)
+        try:
+            out = _result(service.ingest_quote(session, symbol, adapter))
+        finally:
+            adapter.close()
+        check = crosscheck.crosscheck_reference_quote(session, symbol, provider)
+        return {**out, "crosscheck": check.status, "diff_pct": check.diff_pct}
+
+    return _run(f"ingest.reference_quote.{symbol}.{provider}", interval_seconds, body)
+
+
 @celery_app.task(name="gmi.quality.freshness")  # type: ignore[untyped-decorator]
 def check_freshness() -> str:
     def body(session: Any, now: datetime) -> dict[str, Any]:
         return {
             s: service.record_staleness(session, s, now).status
-            for s in ("USDILS", "XAUUSD", "BTCUSD")
+            for s in ("USDILS", "XAUUSD", "BTCUSD", "BTCUSDT")
         }
 
     return _run("quality.freshness", 60, body)
@@ -207,6 +223,29 @@ def ingestion_schedule(s: Settings) -> dict[str, dict[str, Any]]:
             }
             derive_targets.append((sym, "twelvedata"))
         sched["usdils-boi-crosscheck"] = {"task": "gmi.quality.boi_crosscheck", "schedule": 3600.0}
+    if s.coingecko_demo_api_key is not None:
+        sched["btcusd-coingecko-reference"] = {
+            "task": "gmi.ingest.reference_quote",
+            "schedule": float(s.coingecko_quote_interval_seconds),
+            "args": ("BTCUSD", "coingecko", s.coingecko_quote_interval_seconds),
+        }
+    if s.binance_enabled:
+        sched["btcusdt-quote"] = {
+            "task": "gmi.ingest.quote",
+            "schedule": 30.0,
+            "args": ("BTCUSDT", "binance", 30),
+        }
+        sched["btcusdt-candles-1m"] = {
+            "task": "gmi.ingest.candles",
+            "schedule": 60.0,
+            "args": ("BTCUSDT", "binance", "1m", 30),
+        }
+        sched["btcusdt-candles-1h"] = {
+            "task": "gmi.ingest.candles",
+            "schedule": 900.0,
+            "args": ("BTCUSDT", "binance", "1h", 12 * 60),
+        }
+        derive_targets.append(("BTCUSDT", "binance"))
     for sym, prov in derive_targets:
         sched[f"{sym.lower()}-derive-4h"] = {
             "task": "gmi.derive.candles",

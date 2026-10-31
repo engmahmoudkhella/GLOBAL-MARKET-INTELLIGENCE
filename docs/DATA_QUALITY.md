@@ -27,6 +27,9 @@ and applied by `backend/app/ingestion/service.py`. Every stored quote and candle
 | **Out of session** | suspect | Quote observed, or intraday candle lying entirely, outside the instrument's session calendar. **Provider "market open" flags are ignored.** The provider flag is kept in the event details for audit. Excluded from indicators, candles, forecasts and evaluation. The UI shows it separately as "excluded – market closed / weekend". |
 | Incomplete source | suspect | A derived 4h/1d bar is missing ≥1 expected verified 1h source bar. It is rebuilt automatically when the missing bars arrive. |
 | Reference divergence | suspect (event) | Twelve Data USD/ILS near BoI publication differs from the BoI representative rate by more than the threshold (default 0.5 %) |
+| Missing reference rate | suspect (event) | An expected BoI publication day (Monday–Friday minus `boi` holidays, up to the latest stored rate) has no rate. One event per day. Never filled. |
+| Incomplete candle | dropped | A candle ending after the response time is still forming and is not stored |
+| Unknown provider field | log (once) | Extra fields are ignored. Required fields and their types stay strict. |
 | Stale | suspect (event) | No verified quote newer than `staleness_seconds` while the market is open. At most one event per hour per instrument. |
 | Provider outage | suspect (event) | Provider marked `down` after 5 consecutive failures. One event per transition. |
 
@@ -51,6 +54,6 @@ Only 1m/5m/15m/1h bars are taken from providers. **4h and 1d bars are always der
 
 ## Known limitations
 
-- Session calendars for USDILS and XAUUSD are provisional and have no holiday data yet, so a holiday can appear as missing candles.
+- Session calendars for USDILS and XAUUSD are provisional. Holiday data exists (`market_holidays`), but **every entry is an assumption** until confirmed by observed data.
 - Outlier and relative-spread rules need history. They are inactive for a new series until enough verified data exists.
 - Daily (`1d`) candles are not checked for gaps, because day boundaries are provider-defined.

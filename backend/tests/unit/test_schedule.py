@@ -51,9 +51,36 @@ def test_no_provider_daily_or_4h_ingestion_and_btc_only_from_coinbase():
     derived = {
         (e["args"][0], e["args"][2]) for e in sched.values() if e["task"] == "gmi.derive.candles"
     }
-    assert derived == {(s, tf) for s in ("BTCUSD", "USDILS", "XAUUSD") for tf in ("4h", "1d")}
+    assert derived == {
+        (s, tf) for s in ("BTCUSD", "USDILS", "XAUUSD", "BTCUSDT") for tf in ("4h", "1d")
+    }
     assert {
         e["args"][1]
         for e in sched.values()
         if e.get("args", ("",))[0] == "BTCUSD" and e["task"].startswith("gmi.ingest")
     } == {"coinbase"}
+
+
+def test_binance_only_feeds_btcusdt_and_can_be_disabled():
+    sched = build_schedule(settings(ingestion_enabled=True))
+    binance = {e["args"][0] for e in sched.values() if e.get("args", ("", ""))[1] == "binance"}
+    assert binance == {"BTCUSDT"}
+    off = build_schedule(settings(ingestion_enabled=True, binance_enabled=False))
+    assert not any(e.get("args", ("", ""))[1] == "binance" for e in off.values())
+
+
+def test_coingecko_reference_scheduled_only_with_key():
+    assert "btcusd-coingecko-reference" not in build_schedule(settings(ingestion_enabled=True))
+    sched = build_schedule(settings(ingestion_enabled=True, coingecko_demo_api_key=SecretStr("cg")))
+    entry = sched["btcusd-coingecko-reference"]
+    assert entry["task"] == "gmi.ingest.reference_quote"
+    assert entry["args"] == ("BTCUSD", "coingecko", 300)
+
+
+def test_coingecko_budget():
+    from app.ingestion.budget import check_coingecko_budget
+
+    # 300 s: 1/min, ceil(31*86400/300) = 8928/month <= 9000
+    assert check_coingecko_budget(300, 30, 10_000, Decimal("0.9")) is None
+    msg = check_coingecko_budget(60, 30, 10_000, Decimal("0.9"))  # 44640/month
+    assert msg and "44640 calls/month" in msg

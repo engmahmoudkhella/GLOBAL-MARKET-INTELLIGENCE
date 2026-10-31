@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+### Phase 2 – owner recordings A–I, CoinGecko, Binance, holidays (2026-10-31)
+#### Added
+- CoinGecko Demo adapter (BTC/USD reference, header key, monthly budget validation, Coinbase cross-check, UI attribution).
+- Binance adapter for the BTCUSDT secondary series (`data-api.binance.vision`, bookTicker and klines, 451 = rejected).
+- Holiday calendars (`market_holidays`, migration 0005) applied to sessions, gap detection, derived candles and the BoI
+  publication calendar. All seeded entries are flagged as assumptions.
+- BoI publication calendar (Mon–Fri minus holidays) and `missing_reference` gap events.
+- Twelve Data plan check from `/api_usage` at Celery Beat startup.
+- Raw provider attributes on reference rates (`attributes_json`).
+- Recorded fixtures with provenance labels. Reachability script covers www.boi.org.il, edge.boi.org.il and edge.boi.gov.il.
+#### Changed
+- BoI: hosts `www.boi.org.il` and `edge.boi.org.il`. SDMX parsed as SDMX-ML 2.1 XML (defusedxml), not CSV. JSON numbers are required.
+  Fallback publication time is 12:30 Israel time instead of 15:30.
+- Coinbase: ticker requires string prices. Candle columns are mapped explicitly with an order assertion.
+- Twelve Data: meta timezone optional. Responses containing future bars are rejected.
+- Ingestion drops candles that end after the response time (no partial bars stored).
+
+
 ### Phase 2 – Twelve Data and owner findings (2026-10-31)
 #### Added
 - Twelve Data adapter (`/quote`, `/time_series` 1m/5m/15m/1h, `/api_usage`). Strict string-to-Decimal parsing. Header-only API key.

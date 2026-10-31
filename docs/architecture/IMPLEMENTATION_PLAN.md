@@ -99,6 +99,15 @@ trigger test; every metric (MAE, MAPE, directional accuracy, coverage, multi-cla
 6. Free Basic is for development only. Grow $29 before live VPS ingestion. The schedule must fit the configured credits per minute and per day, or config validation fails.
 7. Daily USD/ILS cross-check against the BoI representative rate, logging an event above 0.5 % (configurable).
 
+### 0.2c Owner's live recordings, 2026-10-31 (browser, Gaza): findings A–I
+
+All applied in code with tests. See `docs/DATA_SOURCES.md` (BoI, Coinbase and Twelve Data notes) and the report in `IMPLEMENTATION_STATUS.md`.
+A: BoI publication time from `lastUpdate`, fallback 12:30 IST (assumption). B: BoI calendar Mon–Fri, missing days logged (27 Oct).
+C: `edge.boi.org.il` SDMX works, attributes stored raw. D: BoI JSON numbers via Decimal, divided by unit, change is %.
+E: XML sample is a browser copy (structure only). F: Coinbase ticker strings, 6/9-digit time, unknown fields logged once.
+G: Coinbase candle column order asserted, incomplete candles dropped. H: Twelve Data time_series must be UTC, future bars rejected.
+I: Twelve Data plan read from `/api_usage` and verified at beat startup.
+
 ### 0.3 Phase 2 entry gates (must be verified before Phase 2 code depends on them)
 
 A pre-check on 2026-10-31 used web-search snippets only, because the provider sites were not reachable from the build sandbox. It found:

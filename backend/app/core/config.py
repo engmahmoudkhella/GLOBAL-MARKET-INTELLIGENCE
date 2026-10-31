@@ -50,6 +50,17 @@ class Settings(BaseSettings):
     twelvedata_candles_1m_interval_seconds: int = Field(default=300, ge=60, le=3600)
     twelvedata_budget_headroom: Decimal = Field(default=Decimal("0.9"), gt=0, le=1)
 
+    # CoinGecko Demo (BTC/USD reference): 30 calls/min, 10,000 calls/month.
+    coingecko_calls_per_minute: int = Field(default=30, ge=1)
+    coingecko_calls_per_month: int = Field(default=10_000, ge=1)
+    coingecko_quote_interval_seconds: int = Field(default=300, ge=10)
+    # Coinbase (primary) vs CoinGecko (reference) BTC/USD divergence threshold, percent.
+    coingecko_crosscheck_threshold_pct: Decimal = Field(default=Decimal("0.5"), gt=0)
+    coingecko_crosscheck_window_seconds: int = Field(default=120, ge=5, le=900)
+
+    # Binance BTCUSDT secondary series (USDT-quoted; optional).
+    binance_enabled: bool = True
+
     # USD/ILS cross-check: Twelve Data price near BoI publication vs BoI representative rate.
     boi_crosscheck_threshold_pct: Decimal = Field(default=Decimal("0.5"), gt=0)
     boi_crosscheck_window_minutes: int = Field(default=15, ge=1, le=120)
@@ -85,6 +96,17 @@ class Settings(BaseSettings):
             )
             if not result.ok:
                 raise ValueError(result.message)
+        if self.ingestion_enabled and self.coingecko_demo_api_key is not None:
+            from app.ingestion.budget import check_coingecko_budget
+
+            msg = check_coingecko_budget(
+                self.coingecko_quote_interval_seconds,
+                self.coingecko_calls_per_minute,
+                self.coingecko_calls_per_month,
+                self.twelvedata_budget_headroom,
+            )
+            if msg:
+                raise ValueError(msg)
         return self
 
     def twelvedata_schedule(self) -> TwelveDataSchedule:

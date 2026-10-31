@@ -80,6 +80,10 @@ test("signed-in shell: paper-only banner, 21 sections, instruments without price
   await expect(excluded).toContainText("Excluded quote (not used): Market closed / weekend");
   await expect(excluded).toContainText("3.1415 (last)");
   await expect(page.getByTestId("excluded-XAUUSD")).toHaveCount(0);
+  // CoinGecko attribution wherever CoinGecko is a configured source (Demo plan terms)
+  await expect(page.getByTestId("attribution-coingecko-BTCUSD")).toHaveText(
+    "Powered by CoinGecko API",
+  );
 
   await nav.getByRole("link", { name: "Forecast Track Record" }).click();
   await expect(page.getByTestId("section-title")).toHaveText("Forecast Track Record");

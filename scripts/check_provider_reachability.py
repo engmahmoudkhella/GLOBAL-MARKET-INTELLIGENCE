@@ -15,15 +15,18 @@ import urllib.request
 TARGETS = [
     ("coinbase (primary BTC-USD)", "https://api.exchange.coinbase.com/time"),
     ("binance api (secondary)", "https://api.binance.com/api/v3/time"),
-    ("binance data mirror (secondary)", "https://data-api.binance.vision/api/v3/time"),
+    ("binance data mirror (secondary, used)", "https://data-api.binance.vision/api/v3/time"),
     ("coingecko (reference)", "https://api.coingecko.com/api/v3/ping"),
     ("twelvedata (host only)", "https://api.twelvedata.com/"),
-    ("bank of israel public api", "https://boi.org.il/PublicApi/GetExchangeRates"),
+    # BoI: data hosts verified by the owner 2026-10-31 (www.boi.org.il, edge.boi.org.il);
+    # the SDMX schemaLocation points to edge.boi.gov.il, so check that too.
+    ("bank of israel public api", "https://www.boi.org.il/PublicApi/GetExchangeRates"),
     (
-        "bank of israel sdmx",
-        "https://edge.boi.gov.il/FusionEdgeServer/sdmx/v2/structure/"
-        "dataflow/BOI.STATISTICS/EXR/1.0",
+        "bank of israel sdmx (edge.boi.org.il)",
+        "https://edge.boi.org.il/FusionEdgeServer/sdmx/v2/data/dataflow/BOI.STATISTICS/EXR/1.0/"
+        "RER_USD_ILS?startperiod=2026-10-20&endperiod=2026-10-21",
     ),
+    ("bank of israel schema host (edge.boi.gov.il)", "https://edge.boi.gov.il/"),
 ]
 
 
@@ -48,8 +51,10 @@ def main() -> int:
     bad = 0
     for name, url in TARGETS:
         status, secs = probe(url)
+        # Host-only probes count as reachable on any non-geo HTTP answer.
+        host_only = name.startswith(("twelvedata", "bank of israel schema"))
         ok = status.startswith("HTTP 2") or (
-            name.startswith("twelvedata") and "HTTP 4" in status and "geo" not in status
+            host_only and status.startswith("HTTP") and "geo" not in status
         )
         bad += 0 if ok else 1
         print(f"{'OK  ' if ok else 'FAIL'} {name:34s} {status:28s} {secs * 1000:7.0f} ms")

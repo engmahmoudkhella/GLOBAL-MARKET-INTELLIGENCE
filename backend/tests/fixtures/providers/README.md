@@ -34,3 +34,8 @@ with a recorded response and note the recording date here.
 | twelvedata_api_usage.recorded-2026-10-31.json | GET /api_usage | **recorded live 2026-10-31 via browser** (Basic plan) |
 | twelvedata_time_series_1min.json | GET /time_series?interval=1min&timezone=UTC | written from docs, unverified |
 | twelvedata_error_credits.json | error body (credits exhausted) | written from docs, unverified |
+| coingecko_simple_price.json | GET /api/v3/simple/price?ids=bitcoin&vs_currencies=usd&include_last_updated_at=true | written from docs, unverified |
+| coingecko_ping.json | GET /api/v3/ping | written from docs, unverified |
+| binance_book_ticker.json | GET data-api.binance.vision/api/v3/ticker/bookTicker?symbol=BTCUSDT | written from docs, unverified |
+| binance_klines_1m.json | GET /api/v3/klines?symbol=BTCUSDT&interval=1m | written from docs, unverified |
+| binance_time.json | GET /api/v3/time | written from docs, unverified |

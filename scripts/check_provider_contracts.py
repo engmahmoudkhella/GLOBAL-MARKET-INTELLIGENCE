@@ -24,8 +24,12 @@ sys.path.insert(0, str(_root / "backend" if (_root / "backend").is_dir() else _r
 import httpx  # noqa: E402
 
 from app.core.clock import utcnow  # noqa: E402
+from app.core.config import get_settings  # noqa: E402
+from app.providers.binance import BinanceProvider  # noqa: E402
 from app.providers.boi import BankOfIsraelProvider  # noqa: E402
 from app.providers.coinbase import CoinbaseExchangeProvider  # noqa: E402
+from app.providers.coingecko import CoinGeckoProvider  # noqa: E402
+from app.providers.twelvedata import TwelveDataProvider  # noqa: E402
 
 
 class Recorder(httpx.HTTPTransport):
@@ -49,25 +53,53 @@ def main() -> int:
     if args.save:
         args.save.mkdir(parents=True, exist_ok=True)
     now = utcnow()
-    cb = CoinbaseExchangeProvider(transport=Recorder(args.save))
-    boi = BankOfIsraelProvider(transport=Recorder(args.save))
+    rec = Recorder(args.save)
+    cb = CoinbaseExchangeProvider(transport=rec)
+    boi = BankOfIsraelProvider(transport=rec)
+    bn = BinanceProvider(transport=rec)
+    adapters: list[object] = [cb, boi, bn]
     checks = [
         ("coinbase quote", lambda: cb.get_latest_quote("BTC-USD")),
         (
-            "coinbase 1m candles",
-            lambda: len(cb.get_intraday_ohlcv("BTC-USD", "1m", now - timedelta(minutes=30), now)),
+            "coinbase 1h candles",
+            lambda: len(cb.get_intraday_ohlcv("BTC-USD", "1h", now - timedelta(hours=24), now)),
         ),
         ("coinbase order book", lambda: len(cb.get_order_book("BTC-USD", 5).bids)),
         ("coinbase market status", lambda: cb.get_market_status("BTC-USD").status),
         ("coinbase provider status", lambda: cb.get_provider_status().server_time),
         ("boi latest USD", lambda: boi.get_latest_reference_rate("USD")),
         (
-            "boi history USD",
+            "boi history USD (SDMX XML)",
             lambda: len(
                 boi.get_reference_rates("USD", (now - timedelta(days=14)).date(), now.date())
             ),
         ),
+        ("binance BTCUSDT book", lambda: binance_quote(bn)),
+        (
+            "binance BTCUSDT 1m klines",
+            lambda: len(bn.get_intraday_ohlcv("BTCUSDT", "1m", now - timedelta(minutes=30), now)),
+        ),
     ]
+    s = get_settings()
+    if s.twelvedata_api_key is not None:
+        td = TwelveDataProvider(transport=rec)
+        adapters.append(td)
+        checks += [
+            ("twelvedata plan (/api_usage)", lambda: td.get_plan()),
+            ("twelvedata USD/ILS quote", lambda: td.get_latest_quote("USD/ILS")),
+            (
+                "twelvedata XAU/USD 1h series (timezone=UTC)",
+                lambda: len(td.get_intraday_ohlcv("XAU/USD", "1h", now - timedelta(days=3), now)),
+            ),
+        ]
+    else:
+        print("SKIP twelvedata: GMI_TWELVEDATA_API_KEY not set")
+    if s.coingecko_demo_api_key is not None:
+        cg = CoinGeckoProvider(transport=rec)
+        adapters.append(cg)
+        checks.append(("coingecko bitcoin/usd", lambda: cg.get_latest_quote("bitcoin")))
+    else:
+        print("SKIP coingecko: GMI_COINGECKO_DEMO_API_KEY not set")
     failed = 0
     for name, fn in checks:
         try:
@@ -75,11 +107,15 @@ def main() -> int:
         except Exception as exc:  # noqa: BLE001
             failed += 1
             print(f"FAIL {name}: {type(exc).__name__}: {exc}")
-    cb.close()
-    boi.close()
+    for a in adapters:
+        a.close()  # type: ignore[attr-defined]
     print(f"\n{len(checks) - failed}/{len(checks)} contract checks passed")
     return 1 if failed else 0
 
 
 if __name__ == "__main__":
     sys.exit(main())
+
+
+def binance_quote(bn: BinanceProvider) -> object:
+    return bn.get_latest_quote("BTCUSDT")

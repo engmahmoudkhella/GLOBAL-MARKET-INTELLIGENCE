@@ -84,6 +84,19 @@ export async function InstrumentOverview() {
                 </dd>
               </div>
             </dl>
+            {i.providers.some((p) => p.provider === "coingecko") && (
+              <p className="mt-3 text-xs text-slate-500" lang="en" dir="ltr">
+                <a
+                  href="https://www.coingecko.com/en/api"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  data-testid={`attribution-coingecko-${i.symbol}`}
+                  className="underline"
+                >
+                  Powered by CoinGecko API
+                </a>
+              </p>
+            )}
           </article>
         ))}
       </div>

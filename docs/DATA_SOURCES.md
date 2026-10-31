@@ -1,18 +1,21 @@
 # GMI – Data Sources, Coverage, Licensing and Limitations
 
-**Status (2026-10-31):** Coinbase and Bank of Israel adapters are **implemented and tested against fixtures written from their documentation**. They have **not yet been verified against live responses**, because the build sandbox cannot reach them; run `scripts/check_provider_contracts.py` on the VPS. The Twelve Data adapter is **implemented**. Its `/quote` contract is **verified against the owner's recorded live responses** (2026-10-31), while `/time_series` and `/api_usage` are still documentation-based. CoinGecko and Binance are not implemented yet. Terms, rate limits and pricing **must be re-verified
+**Status (2026-10-31, after the owner's browser recordings):** Adapters are implemented for Bank of Israel, Twelve Data,
+Coinbase, CoinGecko and Binance. **Verified against recorded live responses:** BoI PublicApi JSON, BoI SDMX
+(structure only, browser copy), Twelve Data `/quote`, `/time_series` and `/api_usage`, Coinbase ticker and candles.
+**Still documentation-based (unverified):** Coinbase order book, product status and time; CoinGecko; Binance. Terms, rate limits and pricing **must be re-verified
 against each provider's current documentation and terms of service before integration**. They change often and are
 listed here only as planning assumptions.
 
 | Provider | Instruments / data | Access | Licensing notes | Known limitations | Status |
 |---|---|---|---|---|---|
-| Bank of Israel | USD/ILS representative rate, BoI policy rate, Israeli series | Public website / series API | Public data. Attribution required. | Once per business day. **Not an executable price.** No intraday data. Stored in `official_reference_rates`, never as quotes. | **Adapter implemented** (`app/providers/boi.py`): latest via PublicApi, history via SDMX `RER_USD_ILS`. Live contract unverified. |
+| Bank of Israel | USD/ILS representative rate, BoI policy rate, Israeli series | Public website / series API | Public data. Attribution required. | Published **Monday–Friday** around midday Israel time (observed `lastUpdate` 12:21 IST). **Not an executable price.** No intraday data. Stored in `official_reference_rates`, never as quotes. | **Adapter implemented** (`app/providers/boi.py`). Latest via `www.boi.org.il/PublicApi/GetExchangeRates` (recorded). History via `edge.boi.org.il` SDMX-ML 2.1 XML (structure verified from a browser copy). See BoI notes below. |
 | Israel CBS | Israeli CPI, GDP, unemployment, trade | Public | Public data | Release formats vary | Planned (Phase 4) |
 | **Twelve Data – Grow** (individual plan) | **USD/ILS and XAU/USD** quotes and OHLCV | Paid individual plan, API key | Basic/Grow: **personal, non-commercial use only. No display or redistribution to third parties.** This fits the single-user deployment. | Per-minute API credit limit (no daily cap on Grow). Quotes are indicative, not a bank's executable rate. See **Twelve Data contract notes** below. | **Adapter implemented** (`app/providers/twelvedata.py`). Coverage of USD/ILS and XAU/USD **confirmed** (G1/G2, owner test 2026-10-31). **Free Basic key for development only** (8 credits/min, 800/day, non-display). **Switch to Grow $29 (55 credits/min) before live ingestion on the VPS.** |
 | CME/COMEX via vendor | Gold futures | Paid | Exchange fees | Optional | Optional |
-| **Coinbase Exchange** | **BTC-USD primary**: ticker, candles, order book, trades, WebSocket feed | Public endpoints, no key (`api.exchange.coinbase.com`) | Coinbase **Market Data Terms of Use** apply. Personal-use wording **not yet verified (G5)**. | About 10 req/s per IP (burst 15). Servers reported in AWS us-east-1. Reachability from EU VPS to test (G6). Candles endpoint returns at most 300 buckets per request. Granularities 1m/5m/15m/1h/6h/1d only (**no 4h**, which will be derived from 1h). | **Adapter implemented** (`app/providers/coinbase.py`): ticker, candles, L2 book, product status, server time. Live contract unverified. |
-| Binance | **BTCUSDT secondary series** (separate from BTCUSD); futures funding rate and open interest | Public endpoints, no key; `data-api.binance.vision` spot-only mirror | Binance terms of use apply | **EU services limited since July 2026 (G7)**. HTTP 451 in blocked regions. Quote currency is **USDT and is never relabelled as USD**. | Optional secondary (Phase 2) |
-| **CoinGecko – Demo** | BTC/USD independent reference price, market cap, history | Free Demo API key | **Attribution required**: a "Powered by CoinGecko API" link in the UI | 30 calls/min, 10,000 calls/month | **Selected** (Phase 2) |
+| **Coinbase Exchange** | **BTC-USD primary**: ticker, candles, order book, trades, WebSocket feed | Public endpoints, no key (`api.exchange.coinbase.com`) | Coinbase **Market Data Terms of Use** apply. Personal-use wording **not yet verified (G5)**. | About 10 req/s per IP (burst 15). Servers reported in AWS us-east-1. Reachability from EU VPS to test (G6). Candles endpoint returns at most 300 buckets per request. Granularities 1m/5m/15m/1h/6h/1d only (no 4h; our 4h/1d are derived from 1h). | **Adapter implemented.** Ticker and candles **verified against recordings** (see Coinbase notes). Book, product and time are doc-based. |
+| Binance | **BTCUSDT secondary series** (separate from BTCUSD); futures funding rate and open interest | Public endpoints, no key; `data-api.binance.vision` spot-only mirror | Binance terms of use apply | **EU services limited since July 2026 (G7)**. HTTP 451 in blocked regions (treated as rejected, not retried). Quote currency is **USDT and is never relabelled as USD**. bookTicker has **no timestamp**, so observed_at = reception time (flagged). | **Adapter implemented** (`app/providers/binance.py`, host `data-api.binance.vision`), doc-based. Feeds only `BTCUSDT`. `GMI_BINANCE_ENABLED`. |
+| **CoinGecko – Demo** | BTC/USD independent reference price, market cap, history | Free Demo API key | **Attribution required**: a "Powered by CoinGecko API" link in the UI | 30 calls/min, 10,000 calls/month. Config validation enforces the monthly budget (default poll every 300 s = 8,928 calls/month max). | **Adapter implemented** (`app/providers/coingecko.py`), doc-based. Reference only. Cross-checked against Coinbase mid (event above 0.5 %). Attribution link shown in the UI. |
 | FRED / ALFRED (St. Louis Fed) | Fed funds, Treasury yields, real yields (TIPS), CPI, PCE, Broad Dollar Index | Free API key | Public. Some series carry third-party copyright notices. | Data revisions. Use ALFRED vintages for point-in-time. | Planned (Phase 4) |
 | BLS, BEA, US Treasury | CPI, NFP, unemployment, GDP, PCE, yield curve | Free (keys for BLS/BEA) | Public | — | Planned (Phase 4) |
 | ICE DXY | US Dollar Index | Licensed | Proprietary | — | **Not used in v1** (D4). The Fed Broad Dollar Index (FRED `DTWEXBGS`) is used instead and labelled as such. |
@@ -41,8 +44,49 @@ the application refuses to start when ingestion is enabled. Example: the default
 fits Grow $29 (55/min, no daily cap). Polling is skipped while the session calendar is closed.
 
 **USD/ILS cross-check.** Each business day, the verified Twelve Data USD/ILS price nearest the BoI publication time (±15 min;
-`published_at` from the BoI API, otherwise 15:30 Asia/Jerusalem, an **assumption to verify**) is compared with the BoI
+`published_at` from the BoI API, otherwise **12:30 Asia/Jerusalem**, a configurable **assumption**) is compared with the BoI
 representative rate. A difference above **0.5 %** (`GMI_BOI_CROSSCHECK_THRESHOLD_PCT`) logs a `reference_divergence` event.
+
+## Bank of Israel notes (owner recordings 2026-10-31)
+
+| Observation | Handling |
+|---|---|
+| `currentExchangeRate`, `currentChange` are **JSON numbers** | Parsed with `parse_float=Decimal` from the raw text, never via float. Strings are rejected as a contract change. |
+| `unit` (JPY = 100, LBP = 10) | Rate stored **per 1 unit** (`rate / unit`). The published rate and unit are kept raw in `attributes_json`. |
+| `currentChange` is a **percentage** | Stored raw as `current_change_pct`. Not interpreted. |
+| `lastUpdate` 2026-10-30T10:21:03Z = **12:21 Israel time** | Used as `published_at`. For history without timestamps, `GMI_BOI_PUBLICATION_FALLBACK_TIME` (default **12:30 Asia/Jerusalem, assumption**) is used. The cross-check window follows it. |
+| Observations Mon–Fri only (Fri 23 and Fri 30 Oct present, Sat and Sun absent) | Publication calendar = Monday–Friday minus `boi` holidays. |
+| **Tue 27 Oct 2026 missing** with no known reason (not an Israeli holiday) | Recorded as a `missing_reference` event. **Never filled.** |
+| SDMX `RELEASE_STATUS="YP"`, series attributes (`DATA_SOURCE`, `TIME_COLLECT`, …) | Stored raw in `attributes_json`. Not interpreted. |
+| SDMX schemaLocation references `edge.boi.gov.il` | The reachability script checks `www.boi.org.il`, `edge.boi.org.il` and `edge.boi.gov.il`. |
+| The XML sample is a **browser copy, not byte-exact** | Used for structure only. Re-record raw from the VPS (`check_provider_contracts.py --save`). |
+
+## Coinbase notes (owner recordings 2026-10-31)
+
+- Ticker `bid`/`ask`/`price` are **strings**, so BTC gets a true mid. `time` arrives with **9 or 6** fractional digits (both handled).
+  Unknown extra fields (e.g. `rfq_volume`) are ignored and **logged once**. Required fields are strict.
+- Candles: rows are **[time, LOW, HIGH, OPEN, CLOSE, volume]**, JSON numbers, newest first, 300 rows. Columns are mapped by position, and
+  `low ≤ open, close ≤ high` is asserted (a violation means the column order changed, so the response is rejected).
+- The current hour is incomplete. **Any candle ending after the response time is dropped**, for every provider.
+- The recorded 300-row response spans 349 hours (1792184400 → 1793440800), so **about 50 hours appear to be missing**. Re-check from the VPS.
+  The gap detector reports such gaps and never fills them.
+
+## Twelve Data notes (owner recordings 2026-10-31, continued)
+
+- `/time_series` **without `timezone=UTC` is not UTC**: the latest bar was labelled 21:00 at about 10:58 UTC, and `meta` has no timezone field.
+  The adapter always sends `timezone=UTC` and **rejects a response whose bars start in the future**.
+- `/api_usage` reports `plan_limit` (8), `plan_daily_limit` (800) and `plan_category` ("basic"). **Celery Beat verifies the real plan
+  at startup** and refuses to start if the configured limits exceed it, or the schedule does not fit it.
+- Observation: on 30 Oct the BoI rate was 3.118, while Twelve Data's close and last price were about 3.141–3.142, **about 0.77 %**
+  above. These are not same-time prices, but the 0.5 % cross-check may fire once both feeds run.
+
+## Holiday calendars
+
+Stored in `market_holidays`. **Every seeded row is flagged `is_assumption`** until confirmed by observed data:
+- `fx`, `xau`: 25 Dec 2026, 1 Jan 2027 and 25 Dec 2028. The session day ending 17:00 New York on that date is closed.
+- `boi`: Israeli full rest days 2026–2028 falling on weekdays, computed with `pyluach` plus the statutory Yom HaAtzmaut rules.
+
+Holidays make the market closed for out-of-session checks, gap detection, derived candles and the BoI publication calendar.
 
 ## Rules
 
@@ -61,4 +105,5 @@ representative rate. A difference above **0.5 %** (`GMI_BOI_CROSSCHECK_THRESHOLD
 | 2026-10-31 | Twelve Data, Coinbase, Binance, CoinGecko terms and limits | Web-search snippets (provider sites unreachable from the build sandbox) | See plan §0.3, gates G1–G8. Not yet verified against the full provider pages. |
 | 2026-10-31 | Twelve Data Grow pricing | Owner | $29 / $49 / $79 by credits/min. $29 = 55 credits/min. |
 | 2026-10-31 | Twelve Data `/quote` USD/ILS and XAU/USD | Owner, free Basic key, ~10:27 UTC; responses saved as recorded fixtures | Coverage confirmed. No bid/ask. Strings for numbers. `is_market_open` unreliable. Daily bar starts 16:00 New York. |
+| 2026-10-31 | BoI JSON + SDMX, Coinbase ticker + candles, Twelve Data time_series + api_usage | Owner, browser in Gaza, ~10:56–10:59 UTC; saved as fixtures | Findings A–I (see the notes above) |
 | 2026-10-31 | Coinbase, BoI reachability from build sandbox | `curl` | Blocked by the sandbox egress policy (proxy 403). Not a provider restriction. To be tested on the VPS. |
