@@ -16,6 +16,7 @@ jobs:
   guards:
     name: Guards (no real trading, no secrets)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
@@ -31,6 +32,7 @@ jobs:
   backend:
     name: Backend (lint, types, unit + integration tests)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     services:
       db:
         image: timescale/timescaledb:2.31.0-pg16
@@ -66,6 +68,7 @@ jobs:
   frontend:
     name: Frontend (lint, types, build, e2e)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs: backend
     services:
       db:
@@ -106,6 +109,8 @@ jobs:
           uv run alembic upgrade head
           echo "$E2E_PASSWORD" | uv run python -m app.cli create-user --email "$E2E_EMAIL" --name "E2E" --role admin --password-stdin
           nohup uv run uvicorn app.main:app --port 8000 > ../api.log 2>&1 &
+          # wait-on must use GET (http-get://): FastAPI GET routes answer HEAD with 405.
+          npx --yes wait-on --timeout 60000 http-get://127.0.0.1:8000/health/live
       - working-directory: frontend
         run: pnpm install --frozen-lockfile
       - working-directory: frontend
@@ -119,7 +124,7 @@ jobs:
         run: |
           pnpm exec playwright install --with-deps chromium
           API_INTERNAL_URL=http://localhost:8000 nohup pnpm start -p 3000 > ../web.log 2>&1 &
-          npx --yes wait-on http://localhost:3000/health/live
+          npx --yes wait-on --timeout 120000 http-get://127.0.0.1:3000/ar/login
           pnpm test:e2e
       - if: failure()
         uses: actions/upload-artifact@v4
