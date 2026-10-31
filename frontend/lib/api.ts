@@ -49,6 +49,13 @@ export type QuoteStatus = {
   last_price: string | null;
   price_type: "mid" | "last" | null;
   observed_at: string | null;
+  latest_excluded: {
+    price: string | null;
+    price_type: "mid" | "last" | null;
+    observed_at: string;
+    data_quality_status: string;
+    reasons: string[];
+  } | null;
 };
 
 export class ApiError extends Error {

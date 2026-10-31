@@ -10,6 +10,18 @@ from pydantic import BaseModel, PlainSerializer
 Price = Annotated[Decimal, PlainSerializer(lambda d: format(d, "f"), return_type=str)]
 
 
+class ExcludedQuoteOut(BaseModel):
+    """Newest stored quote that failed quality checks (e.g. outside the trading session).
+
+    Shown for transparency only; never used by indicators, candles, forecasts or evaluation."""
+
+    price: Price | None
+    price_type: Literal["mid", "last"] | None
+    observed_at: datetime
+    data_quality_status: str
+    reasons: list[str]
+
+
 class QuoteOut(BaseModel):
     symbol: str
     provider: str | None
@@ -24,6 +36,7 @@ class QuoteOut(BaseModel):
     received_at: datetime | None = None
     age_seconds: float | None = None
     data_quality_status: str | None = None
+    latest_excluded: ExcludedQuoteOut | None = None
 
 
 class CandleOut(BaseModel):

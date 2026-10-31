@@ -44,6 +44,9 @@ class IssueType(StrEnum):
     ABNORMAL_SPREAD = "abnormal_spread"
     CROSSED_QUOTE = "crossed_quote"
     MISSING_PRICE = "missing_price"
+    OUT_OF_SESSION = "out_of_session"
+    INCOMPLETE_SOURCE = "incomplete_source"
+    REFERENCE_DIVERGENCE = "reference_divergence"
 
 
 @dataclass(frozen=True)
@@ -108,6 +111,38 @@ def check_alignment(candle: Candle) -> list[QualityIssue]:
             )
         ]
     return []
+
+
+# ---------------------------------------------------------------- sessions
+def check_session(
+    observed_at: datetime, calendar: MarketCalendar, provider_flags: dict[str, str] | None = None
+) -> list[QualityIssue]:
+    """Our session calendar is authoritative; provider 'market open' flags are ignored."""
+    if calendar.is_open(observed_at):
+        return []
+    return [
+        QualityIssue(
+            IssueType.OUT_OF_SESSION,
+            "suspect",
+            "observation outside the instrument's trading session",
+            observed_at,
+            {f"provider_{k}": v for k, v in (provider_flags or {}).items()},
+        )
+    ]
+
+
+def check_candle_session(c: Candle, calendar: MarketCalendar) -> list[QualityIssue]:
+    step = TIMEFRAME_DELTA[c.timeframe]
+    if step >= timedelta(days=1) or calendar.is_open_during(c.open_time, step):
+        return []
+    return [
+        QualityIssue(
+            IssueType.OUT_OF_SESSION,
+            "suspect",
+            "candle lies entirely outside the instrument's trading session",
+            c.open_time,
+        )
+    ]
 
 
 # ---------------------------------------------------------------- candles

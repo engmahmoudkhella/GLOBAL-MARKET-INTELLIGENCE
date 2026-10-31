@@ -1,8 +1,11 @@
-# Provider response fixtures – DEVELOPMENT FIXTURES, NOT MARKET DATA
+# Provider response fixtures – DEVELOPMENT FIXTURES, NOT LIVE MARKET DATA
 
-These files are **hand-written from the providers' documented response formats**. They are
-**not recorded live responses**: the build sandbox cannot reach Coinbase or the Bank of Israel.
-All numbers are illustrative test values and must never be shown as market data.
+Two kinds of fixtures live here, distinguished by file name and by the table below:
+
+* **doc-derived**: hand-written from the provider's documented format, with illustrative numbers.
+  Not recorded live. The build sandbox cannot reach the providers.
+* **recorded** (`*.recorded-YYYY-MM-DD.json`): real responses captured by the owner, kept verbatim.
+  They are historical snapshots used only to test parsing and rules, never shown as current prices.
 
 Before relying on the adapters in production, run on the VPS:
 
@@ -21,3 +24,8 @@ with a recorded response and note the recording date here.
 | coinbase_time.json | GET /time | written from docs, unverified |
 | boi_exchange_rates.json | GET boi.org.il/PublicApi/GetExchangeRates | written from docs, unverified |
 | boi_rer_usd_ils.csv | BoI SDMX EXR RER_USD_ILS, format=csv | written from docs, unverified |
+| twelvedata_quote_usdils.recorded-2026-10-31.json | GET /quote?symbol=USD/ILS | **recorded live 2026-10-31 ~10:27 UTC, free Basic key** (owner) |
+| twelvedata_quote_xauusd.recorded-2026-10-31.json | GET /quote?symbol=XAU/USD | **recorded live 2026-10-31 ~10:27 UTC, free Basic key** (owner) |
+| twelvedata_time_series_1min.json | GET /time_series?interval=1min&timezone=UTC | written from docs, unverified |
+| twelvedata_error_credits.json | error body (credits exhausted) | written from docs, unverified |
+| twelvedata_api_usage.json | GET /api_usage | written from docs, unverified |

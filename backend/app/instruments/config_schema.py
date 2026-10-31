@@ -7,6 +7,7 @@ The config holds *configuration only* - never prices or model performance.
 from __future__ import annotations
 
 from datetime import time
+from datetime import time as TimeOfDay
 from decimal import Decimal
 from typing import Literal
 
@@ -62,6 +63,21 @@ class SessionCalendar(_Strict):
         return self
 
 
+class DailyBoundary(_Strict):
+    """Wall-clock time at which one trading day ends and the next begins.
+
+    Our own daily candles are built from intraday bars between consecutive boundaries; provider
+    daily bars are never stored (their boundaries are provider-defined)."""
+
+    timezone: str = "UTC"
+    time: TimeOfDay = TimeOfDay(0, 0)
+
+    @field_validator("timezone")
+    @classmethod
+    def _tz(cls, v: str) -> str:
+        return validate_timezone(v)
+
+
 class InstrumentConfig(_Strict):
     schema_version: Literal[1] = 1
     sessions: SessionCalendar
@@ -71,6 +87,7 @@ class InstrumentConfig(_Strict):
     candle_timeframes: tuple[Timeframe, ...]
     forecasting_enabled: bool
     forecast_horizons: tuple[Horizon, ...] = ()
+    daily_candle_boundary: DailyBoundary = DailyBoundary()
     notes: str | None = None
 
     @model_validator(mode="after")

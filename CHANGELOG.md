@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### Phase 2 – Twelve Data and owner findings (2026-10-31)
+#### Added
+- Twelve Data adapter (`/quote`, `/time_series` 1m/5m/15m/1h, `/api_usage`). Strict string-to-Decimal parsing. Header-only API key.
+  JSON error mapping. The owner's recorded `/quote` responses are saved as labelled fixtures.
+- `out_of_session` rule: the session calendar is authoritative and provider `is_market_open` is ignored. Excluded quotes are exposed as
+  `latest_excluded` in the quote API and labelled in the UI.
+- Locally derived 4h (UTC) and 1d (17:00 New York for FX/gold, 00:00 UTC for crypto) candles from verified 1h bars, with
+  `incomplete_source` handling. Provider daily and 4h bars are never ingested. Migration `0004_derived_candles`.
+- Twelve Data credit budget model. Configuration validation fails at startup when the schedule exceeds plan limits.
+- Daily USD/ILS cross-check against the BoI representative rate (`reference_divergence` events, default 0.5 %).
+- Schedule: Twelve Data tasks when a key is configured, polling skipped while the session is closed, derive tasks, cross-check.
+- E2E seed (throwaway e2e database only) that ingests the recorded Saturday quote through the real pipeline.
+#### Changed
+- Coinbase 1d ingestion removed (daily bars are derived). httpx/httpcore logging is limited to WARNING so no URL is logged.
+
+
 ### Phase 2 – groundwork (2026-10-31)
 #### Added
 - Provider interface with capability flags. Shared HTTP client (timeouts, exponential backoff with jitter, Retry-After, pacing).

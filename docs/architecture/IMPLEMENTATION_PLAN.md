@@ -88,14 +88,25 @@ trigger test; every metric (MAE, MAPE, directional accuracy, coverage, multi-cla
 | Forecast horizons for USDILS and XAUUSD | **Measured in trading time** on the instrument's session calendar. 1h/4h/24h = that many **hours of open market**. 7d/30d = that many **trading days**. Each forecast stores both the trading-time expiry definition and its calendar timestamp (`expires_at`). **BTCUSD stays in calendar time (24/7).** If data is stale at expiry, the row is still `not_evaluable`. Expiries are **not** shifted to the next open. |
 | Coinbase / Binance reachability | Checked from the Frankfurt VPS once it exists (`scripts/check_provider_reachability.py`). Binance stays secondary. |
 
+### 0.2b Twelve Data findings and decisions (owner, 2026-10-31)
+
+1. Coverage of USD/ILS and XAU/USD is confirmed (G1/G2 closed). The adapter is implemented. The owner's raw `/quote` responses are kept as recorded fixtures.
+2. `/quote` has no bid/ask, so the Track Record uses **last price** (`price_type = last`). Bid/ask stay nullable, and mid is preferred if a later plan or endpoint provides them.
+3. **Our session calendar is authoritative.** The provider's `is_market_open` is never trusted. Out-of-session quotes and candles are `suspect: out_of_session`
+   and are excluded from indicators, candles, forecasts and **evaluation** (§0.4: "last valid quote" = last *verified* quote). The UI shows them labelled as closed or weekend.
+4. **Provider daily bars are never stored.** 1d and 4h bars are derived from our verified 1h bars with documented boundaries (`docs/DATA_QUALITY.md`).
+5. Numeric fields are strings, parsed strictly to Decimal.
+6. Free Basic is for development only. Grow $29 before live VPS ingestion. The schedule must fit the configured credits per minute and per day, or config validation fails.
+7. Daily USD/ILS cross-check against the BoI representative rate, logging an event above 0.5 % (configurable).
+
 ### 0.3 Phase 2 entry gates (must be verified before Phase 2 code depends on them)
 
 A pre-check on 2026-10-31 used web-search snippets only, because the provider sites were not reachable from the build sandbox. It found:
 
 | Gate | Status | Notes |
 |---|---|---|
-| G1 Twelve Data Grow includes **XAU/USD** (real-time or delayed?) | **Unconfirmed** | Grow is listed as including commodities, but XAU/USD on Grow is not explicitly confirmed. Ask Twelve Data support or test with the key. |
-| G2 Twelve Data Grow includes **USD/ILS** | **Unconfirmed** | The pair is in their catalogue. One snippet mentions real-time forex as an add-on. |
+| G1 Twelve Data includes **XAU/USD** | **Resolved** (owner test 2026-10-31, Basic key) | Quote returned for XAU/USD. Recorded fixture saved. |
+| G2 Twelve Data includes **USD/ILS** | **Resolved** (owner test 2026-10-31, Basic key) | Quote returned for USD/ILS. Recorded fixture saved. |
 | G3 Twelve Data Grow price and credits | **Resolved** | $29 tier, 55 credits/min (owner). The adapter must respect the per-minute credit budget. |
 | G4 Twelve Data licence fits use | **Consistent** | Support article: Basic/Grow data is for personal, non-commercial use and must not be displayed or redistributed to third parties. This matches D2. **The dashboard must not be shared with other people.** |
 | G5 Coinbase Exchange market-data terms | **Unconfirmed** | Public endpoints need no auth (`api.exchange.coinbase.com`, about 10 req/s per IP). Use is governed by the Coinbase "Market Data Terms of Use". Personal-use wording not yet read. |
@@ -298,8 +309,8 @@ Details and licensing are in [`docs/DATA_SOURCES.md`](../DATA_SOURCES.md). Summa
 | Need | Candidate | Cost | Main limitation |
 |---|---|---|---|
 | USD/ILS official reference | Bank of Israel (public series / SDMX API) | Free | Once-daily **representative rate**. It is not an executable quote and has no intraday data. |
-| USD/ILS intraday | **Twelve Data Grow** (D1) | Individual plan | Personal display only (G4). Plan coverage not yet confirmed (G2). Quotes are indicative and not a bank's executable rate. |
-| XAU/USD spot | **Twelve Data Grow** (D1) | Individual plan | Plan coverage not yet confirmed (G1). LBMA benchmark prices are IBA-licensed and not used. |
+| USD/ILS intraday | **Twelve Data Grow** (D1) | Individual plan | Personal display only (G4). Coverage confirmed (G2). Quotes are indicative and not a bank's executable rate. |
+| XAU/USD spot | **Twelve Data Grow** (D1) | Individual plan | Coverage confirmed (G1). LBMA benchmark prices are IBA-licensed and not used. |
 | Gold futures | CME/COMEX via vendor | Paid | Exchange data fees apply. |
 | **BTC/USD primary** spot, candles, order book | **Coinbase Exchange** public REST/WebSocket (`BTC-USD`) | Free | Market Data Terms of Use apply (G5). About 10 req/s per IP. |
 | BTC/USDT secondary, funding, open interest | Binance public REST/WebSocket | Free | **Geo-restricted.** EU services limited since July 2026 (G7). Weight-based rate limits. Stored as a separate USDT series, never relabelled as USD. |

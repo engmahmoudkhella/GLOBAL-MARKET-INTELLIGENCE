@@ -81,6 +81,8 @@ class MarketCandle(Base):
     quality_issues: Mapped[list[dict[str, Any]]] = mapped_column(
         JSONB, nullable=False, server_default=text("'[]'::jsonb")
     )
+    # NULL = provider bar. 'derived:1h' = built locally from verified 1h bars.
+    derived_from: Mapped[str | None] = mapped_column(String(20))
 
 
 class DataQualityEvent(Base):

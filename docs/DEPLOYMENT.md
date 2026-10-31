@@ -61,6 +61,19 @@ docker compose run --rm api python scripts/check_provider_contracts.py
 The contract check parses live Coinbase and Bank of Israel responses with the production adapters. Run it with
 `--save DIR` to keep the raw responses as recorded fixtures.
 
+### Twelve Data plan
+
+Development uses the free Basic key. **Switch to Grow $29 before enabling live ingestion on the VPS**, and set:
+
+```bash
+GMI_TWELVEDATA_API_KEY=...
+GMI_TWELVEDATA_CREDITS_PER_MINUTE=55
+GMI_TWELVEDATA_CREDITS_PER_DAY=0          # 0 = no daily cap (Grow)
+```
+
+With `GMI_INGESTION_ENABLED=true`, the application **refuses to start** if the schedule does not fit these limits (×0.9 headroom).
+The error message states the required and allowed credits.
+
 ### Live ingestion
 
 Ingestion is **off by default**. To start it, set `GMI_INGESTION_ENABLED=true` in `.env` and restart `beat` and `worker`.

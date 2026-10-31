@@ -76,7 +76,7 @@ jobs:
         env:
           POSTGRES_USER: gmi
           POSTGRES_PASSWORD: gmi
-          POSTGRES_DB: gmi
+          POSTGRES_DB: gmi_e2e
         ports: ["5432:5432"]
         options: >-
           --health-cmd "pg_isready -U gmi" --health-interval 5s --health-timeout 3s
@@ -85,7 +85,7 @@ jobs:
         image: redis:7-alpine
         ports: ["6379:6379"]
     env:
-      GMI_DATABASE_URL: postgresql+psycopg://gmi:gmi@localhost:5432/gmi
+      GMI_DATABASE_URL: postgresql+psycopg://gmi:gmi@localhost:5432/gmi_e2e
       GMI_REDIS_URL: redis://localhost:6379/0
       GMI_COOKIE_SECURE: "false"
       GMI_ENVIRONMENT: development
@@ -108,6 +108,7 @@ jobs:
           uv python install 3.12 && uv sync --frozen --no-dev
           uv run alembic upgrade head
           echo "$E2E_PASSWORD" | uv run python -m app.cli create-user --email "$E2E_EMAIL" --name "E2E" --role admin --password-stdin
+          GMI_E2E_SEED=1 uv run python -m tests.e2e_seed
           nohup uv run uvicorn app.main:app --port 8000 > ../api.log 2>&1 &
           # wait-on must use GET (http-get://): FastAPI GET routes answer HEAD with 405.
           npx --yes wait-on --timeout 60000 http-get://127.0.0.1:8000/health/live

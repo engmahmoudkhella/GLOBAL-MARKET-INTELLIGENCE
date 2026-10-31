@@ -15,6 +15,7 @@ from app.ingestion import service
 from app.markets.schemas import (
     CandleList,
     CandleOut,
+    ExcludedQuoteOut,
     QuoteOut,
     ReferenceRateList,
     ReferenceRateOut,
@@ -75,9 +76,24 @@ def quote(symbol: str, db: Session = Depends(get_db)) -> QuoteOut:
         data_status=f.status,
         signals_allowed=f.status == "fresh",
     )
+    prov = _provider(db, inst, "primary", None)
+    newest = db.scalar(
+        select(MarketQuote)
+        .where(MarketQuote.instrument_id == inst.id, MarketQuote.provider_id == prov.id)
+        .order_by(MarketQuote.observed_at.desc())
+        .limit(1)
+    )
+    if newest is not None and newest.data_quality_status != "verified":
+        price = newest.mid if newest.mid is not None else newest.last_price
+        out.latest_excluded = ExcludedQuoteOut(
+            price=price,
+            price_type=None if price is None else ("mid" if newest.mid is not None else "last"),
+            observed_at=newest.observed_at,
+            data_quality_status=newest.data_quality_status,
+            reasons=[str(i.get("type")) for i in newest.quality_issues],
+        )
     if f.last_observed_at is None:
         return out
-    prov = _provider(db, inst, "primary", None)
     row = db.scalar(
         select(MarketQuote).where(
             MarketQuote.instrument_id == inst.id,

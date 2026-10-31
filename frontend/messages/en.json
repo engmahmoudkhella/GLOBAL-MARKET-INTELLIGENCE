@@ -74,6 +74,14 @@
     "priceType": {
       "mid": "mid",
       "last": "last"
+    },
+    "excluded": {
+      "title": "Excluded quote (not used)",
+      "reason": {
+        "out_of_session": "Market closed / weekend",
+        "other": "Failed data-quality checks"
+      },
+      "detail": "{price} ({type}) at {time}"
     }
   }
 }

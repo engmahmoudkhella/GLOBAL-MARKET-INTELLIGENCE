@@ -6,7 +6,7 @@ Last updated: 2026-10-31 (Phase 2 groundwork). Phase numbering follows the appro
 |---|---|---|
 | 0 | Repository inspection and technical plan | **Done. Approved 2026-10-31** with decisions D1–D9. |
 | 1 | Foundation: repo layout, DB + migrations, auth/RBAC, instruments, Docker, CI, AR/EN shell | **Accepted.** GitHub CI green (run #2, 2026-10-31). |
-| 2 | Market data (Twelve Data, Coinbase, BoI, CoinGecko, Binance secondary) | **In progress.** Groundwork done (see below). Twelve Data is on hold for the owner's coverage test. CoinGecko and Binance are not started. Live contracts are unverified until the VPS checks run. |
+| 2 | Market data (Twelve Data, Coinbase, BoI, CoinGecko, Binance secondary) | **In progress.** All three primary instruments have adapters (Twelve Data, Coinbase) plus the BoI reference. Coinbase and BoI live contracts are unverified until the VPS checks run. Twelve Data `/quote` is verified against recorded responses. CoinGecko and Binance are not started. |
 | 3 | Importer Advisor (moved up) | Not started |
 | 4 | Technical, fundamental and news analysis | Not started |
 | 5 | Forecasting, including the **Forecast Track Record** page (plan §0.4) | Not started |
@@ -57,20 +57,30 @@ Last updated: 2026-10-31 (Phase 2 groundwork). Phase numbering follows the appro
 | Market API: quote (freshness, `signals_allowed`), candles, reference rates | Done | 7 integration tests |
 | Overview shows data status per instrument; price only when verified | Done | Playwright (AR/EN, desktop/mobile) and exact decimal-string rounding test |
 | VPS scripts: `check_provider_reachability.py`, `check_provider_contracts.py` | Written, **not yet run** (no VPS yet) | Fail cleanly in the sandbox (egress blocked) |
-| Twelve Data adapter (USDILS, XAUUSD) | **On hold** | Waiting for the owner's coverage test |
-| CoinGecko reference, Binance secondary, 4h aggregation, holiday calendars | Not started | — |
+| Twelve Data adapter (USDILS, XAUUSD) | Done. `/quote` verified against **recorded** responses. `/time_series` and `/api_usage` are doc-derived. | 17 unit tests, including exact parsing of both recorded responses, header-only API key and error mapping |
+| Session calendar authoritative: `suspect: out_of_session` | Done | Recorded Saturday quotes for USDILS and XAUUSD stored as suspect and excluded from freshness. Weekend candle suspect. API `latest_excluded`. Playwright checks the label (e2e seed uses the recorded fixture). |
+| Derived 4h/1d candles (provider daily bars never stored) | Done | 8 integration tests: NY 17:00 boundary across DST end, gold break, missing hour → suspect → backfilled → verified, immutability, 4h UTC |
+| Twelve Data credit budget + fail-loud config validation | Done | 7 unit tests and schedule tests |
+| USD/ILS vs BoI cross-check | Done | 5 integration tests with hand-computed divergences, plus the task retry test |
+| CoinGecko reference, Binance secondary, holiday calendars | Not started | — |
 
-**Phase 2 is not complete.** Its acceptance gate ("all three instruments retrieve data") needs the Twelve Data adapter
-and the live checks on the VPS.
+**Phase 2 is not complete.** Its acceptance gate ("all three instruments retrieve data") needs live runs on the VPS
+(contract checks, reachability, the Grow key) and CoinGecko and Binance.
 
-### Test results (local, 2026-10-31, Phase 2 groundwork)
+### Test results (local, 2026-10-31, after Twelve Data findings)
+
+- Backend: **162 passed** (unit + integration on TimescaleDB). ruff and mypy --strict clean.
+- Frontend: Playwright **20 passed**, including the excluded weekend-quote label.
+
+### Earlier (Phase 2 groundwork)
 
 - Backend: **118 passed** (unit and integration on PostgreSQL 16 + TimescaleDB 2.31.0). ruff, ruff format and mypy --strict are clean.
 - Frontend: eslint and tsc clean, build OK, Playwright **20 passed** (18 e2e + decimal-rounding unit test on 2 projects).
 
 ## Open items needing the owner
 
-- **G1/G2:** the owner's Twelve Data key test for XAU/USD and USD/ILS quotes. Please include whether the quote response has `bid`/`ask` fields. G3 is resolved ($29, 55 credits/min).
+- **Twelve Data Grow:** switch from Basic to Grow $29 before enabling ingestion on the VPS. Set `GMI_TWELVEDATA_CREDITS_PER_MINUTE=55` and `..._PER_DAY=0`.
+- **BoI publication time:** the cross-check falls back to 15:30 Asia/Jerusalem when the BoI response has no timestamp. This assumption should be confirmed.
 - **O1:** resolved. Use mid when bid/ask exist, otherwise last price, and record `price_type`.
 - **G5:** read the Coinbase Market Data Terms of Use.
 - **G6/G7 + live contracts:** once the Frankfurt VPS exists, run `scripts/check_provider_reachability.py` and `scripts/check_provider_contracts.py --save recorded/` and send the output.

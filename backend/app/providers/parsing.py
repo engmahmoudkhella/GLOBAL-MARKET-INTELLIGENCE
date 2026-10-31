@@ -57,3 +57,18 @@ def require(provider: str, obj: Any, key: str) -> Any:
     if not isinstance(obj, dict) or key not in obj:
         raise ProviderDataError(provider, f"missing field '{key}'")
     return obj[key]
+
+
+def to_decimal_str(provider: str, value: Any, field: str, *, positive: bool = True) -> Decimal:
+    """Strict variant for providers whose contract sends numbers as JSON strings."""
+    if not isinstance(value, str):
+        raise ProviderDataError(provider, f"{field}: expected numeric string, got {value!r}")
+    return to_decimal(provider, value.strip(), field, positive=positive)
+
+
+def epoch_seconds(provider: str, value: Any, field: str) -> datetime:
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise ProviderDataError(
+            provider, f"{field}: expected positive integer epoch, got {value!r}"
+        )
+    return datetime.fromtimestamp(value, UTC)

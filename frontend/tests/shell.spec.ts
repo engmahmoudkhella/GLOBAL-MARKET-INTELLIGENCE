@@ -70,10 +70,16 @@ test("signed-in shell: paper-only banner, 21 sections, instruments without price
   }
   await expect(page.getByTestId("instrument-USDILS")).toContainText("30d");
   await expect(page.getByTestId("instrument-BTCUSD")).toContainText("Coinbase");
-  // Freshness is always visible; with no ingested data it says so and shows no price.
+  // Freshness is always visible; with no verified data it says so and shows no price.
   for (const sym of ["USDILS", "XAUUSD", "BTCUSD"]) {
     await expect(page.getByTestId(`status-${sym}`)).toHaveText("No data yet");
   }
+  // The e2e seed ingested the owner's recorded Saturday USD/ILS quote: it must be shown as
+  // excluded (market closed), never as the current price.
+  const excluded = page.getByTestId("excluded-USDILS");
+  await expect(excluded).toContainText("Excluded quote (not used): Market closed / weekend");
+  await expect(excluded).toContainText("3.1415 (last)");
+  await expect(page.getByTestId("excluded-XAUUSD")).toHaveCount(0);
 
   await nav.getByRole("link", { name: "Forecast Track Record" }).click();
   await expect(page.getByTestId("section-title")).toHaveText("Forecast Track Record");

@@ -48,6 +48,9 @@ class Quote:
     bid: Decimal | None = None
     ask: Decimal | None = None
     last_price: Decimal | None = None
+    # Provider-reported flags kept for audit only (e.g. Twelve Data is_market_open).
+    # Never used for decisions: our session calendar is authoritative.
+    provider_flags: dict[str, str] = field(default_factory=dict)
 
     @property
     def mid(self) -> Decimal | None:

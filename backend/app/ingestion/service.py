@@ -40,6 +40,8 @@ from app.quality.rules import IssueType, QualityIssue
 log = logging.getLogger(__name__)
 
 DOWN_AFTER_FAILURES = 5
+# Only intraday bars are taken from providers; 4h and 1d are derived (app/ingestion/aggregate.py).
+PROVIDER_TIMEFRAMES = frozenset({"1m", "5m", "15m", "1h"})
 HISTORY_WINDOW = 100
 T = TypeVar("T")
 
@@ -184,6 +186,7 @@ def ingest_quote(session: Session, symbol: str, adapter: MarketDataProvider) -> 
         spreads = [s for s in (rules.spread_bps(_as_quote(h)) for h in history) if s is not None]
         prices = [p for p in (h.mid or h.last_price for h in history) if p is not None]
         issues = rules.check_quote(q, spreads, t.config.max_spread_bps)
+        issues += rules.check_session(q.observed_at, t.calendar, q.provider_flags)
         price = q.mid if q.mid is not None else q.last_price
         if price is not None and not issues:
             issues += rules.check_outlier_return(prices, price, q.observed_at)
@@ -244,6 +247,8 @@ def ingest_candles(
     *,
     detect_gaps: bool = True,
 ) -> IngestResult:
+    if timeframe not in PROVIDER_TIMEFRAMES:
+        raise ValueError(f"{timeframe} candles are derived locally, never ingested from providers")
     t = resolve(session, symbol, adapter.name)
     result = IngestResult(ok=True)
     with provider_call(session, t.provider, adapter, result):
@@ -269,6 +274,7 @@ def ingest_candles(
                 rules.check_ohlc(c)
                 + rules.check_alignment(c)
                 + rules.check_timestamp(c.open_time, c.received_at)
+                + rules.check_candle_session(c, t.calendar)
             )
             if c.open_time in dup_times:
                 issues.append(

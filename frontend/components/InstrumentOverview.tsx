@@ -121,6 +121,28 @@ function QuoteBlock({
           </p>
         </>
       )}
+      {q.latest_excluded && (
+        <div
+          data-testid={`excluded-${q.symbol}`}
+          className="rounded border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900"
+        >
+          <p className="font-medium">
+            {t("excluded.title")}:{" "}
+            {q.latest_excluded.reasons.includes("out_of_session")
+              ? t("excluded.reason.out_of_session")
+              : t("excluded.reason.other")}
+          </p>
+          {q.latest_excluded.price && q.latest_excluded.price_type && (
+            <p className="ltr-num">
+              {t("excluded.detail", {
+                price: roundDecimalString(q.latest_excluded.price, precision),
+                type: t(`priceType.${q.latest_excluded.price_type}`),
+                time: formatTime(q.latest_excluded.observed_at),
+              })}
+            </p>
+          )}
+        </div>
+      )}
     </div>
   );
 }
