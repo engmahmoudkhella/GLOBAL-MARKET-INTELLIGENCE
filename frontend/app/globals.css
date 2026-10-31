@@ -1,0 +1,17 @@
+@import "tailwindcss";
+
+:root {
+  --font-sans: ui-sans-serif, system-ui, "Segoe UI", "Noto Sans", "Noto Sans Arabic", Tahoma,
+    Arial, sans-serif;
+}
+
+html {
+  font-family: var(--font-sans);
+}
+
+/* Symbols, prices and numbers stay LTR inside RTL text (SRS §15.5). */
+.ltr-num {
+  direction: ltr;
+  unicode-bidi: isolate;
+  font-variant-numeric: tabular-nums;
+}

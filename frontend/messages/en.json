@@ -1,0 +1,67 @@
+{
+  "app": {
+    "name": "Global Market Intelligence",
+    "short": "GMI",
+    "paperOnly": "Paper trading only. No real-money execution.",
+    "notAdvice": "Forecasts are probabilistic estimates, not guarantees or investment advice."
+  },
+  "login": {
+    "title": "Sign in",
+    "email": "Email",
+    "password": "Password",
+    "submit": "Sign in",
+    "submitting": "Signing in…",
+    "invalid": "Invalid email or password.",
+    "rateLimited": "Too many attempts. Try again in a minute.",
+    "error": "Sign-in failed. Please try again.",
+    "noSignup": "Accounts are created by the administrator. There is no public sign-up."
+  },
+  "shell": {
+    "signedInAs": "Signed in as {name}",
+    "logout": "Sign out",
+    "language": "العربية",
+    "nav": "Main navigation"
+  },
+  "sections": {
+    "overview": "Global Overview",
+    "market-monitor": "Market Monitor",
+    "usdils": "USD/ILS Intelligence",
+    "gold": "Gold Intelligence",
+    "bitcoin": "Bitcoin Intelligence",
+    "forecast-center": "AI Forecast Center",
+    "forecast-track-record": "Forecast Track Record",
+    "cross-asset": "Cross-Asset Analysis",
+    "news": "News Intelligence",
+    "calendar": "Economic Calendar",
+    "technical": "Technical Analysis",
+    "signals": "Trading Signals",
+    "paper-trading": "Paper Trading",
+    "portfolio": "Portfolio Analytics",
+    "importer-advisor": "Importer Advisor",
+    "backtesting": "Backtesting",
+    "model-performance": "Model Performance",
+    "alerts": "Alerts Center",
+    "reports": "Reports",
+    "data-sources": "Data Sources",
+    "settings": "System Settings"
+  },
+  "notImplemented": {
+    "title": "Not implemented yet",
+    "body": "This page is scheduled for phase {phase}. It intentionally shows no data until real, sourced data is available."
+  },
+  "overview": {
+    "instruments": "Configured instruments",
+    "noMarketData": "No market data yet. Provider integrations arrive in phase 2.",
+    "primary": "Primary",
+    "secondary": "Secondary series",
+    "horizons": "Forecast horizons",
+    "sources": "Configured sources",
+    "noForecasting": "Forecasting disabled",
+    "purpose": {
+      "primary": "primary",
+      "reference": "reference",
+      "secondary": "secondary"
+    },
+    "providerStatus": "status: {status}"
+  }
+}

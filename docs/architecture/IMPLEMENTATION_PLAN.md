@@ -1,11 +1,98 @@
-# GMI – Initial Technical Plan (for review)
+# GMI – Technical Plan
 
-**Status:** Draft for review. No application code has been written yet.
-**Date:** 2026-10-31
-**Source of requirements:** GMI SRS v1.0 (to be committed as `docs/SRS.md`)
+**Status:** **Approved 2026-10-31** with the decisions and changes in §0. Phase 1 is in progress.
+**Source of requirements:** [`docs/SRS.md`](../SRS.md). Where §0 explicitly amends the SRS, §0 wins.
 
-This document answers the ten items in SRS §25 ("Initial Claude Code master prompt").
-Implementation starts only after this plan is reviewed and the open decisions in §10 are answered.
+This document answers the ten items in SRS §25. Sections 1–10 are the original plan, edited where §0 changes them.
+
+---
+
+## 0. Approved decisions (2026-10-31)
+
+### 0.1 Answers to open decisions
+
+| ID | Decision |
+|---|---|
+| D1 | **Individual plans only.** Twelve Data **Grow** (individual plan, personal internal display) for USD/ILS and XAU/USD. **CoinGecko Demo** (free, attribution required) as the BTC reference. Free sources for everything else. |
+| D2 | **Single user, personal non-commercial use.** One owner account plus admin. The schema stays multi-user, but there is **no public signup**. Accounts are created with a CLI command. |
+| D3 | **EU cloud VPS (e.g. Frankfurt)**, so ingestion keeps running during local power or internet outages. |
+| D4 | **Fed Broad Dollar Index** (FRED `DTWEXBGS`) for v1. It is always labelled as such and never called "DXY". No DXY licence. |
+| D5 | **Claude via the Anthropic API**, behind the provider-independent `LLMClient` adapter. |
+| D6 | Official sources (Fed, Bank of Israel, US agencies, Israel CBS) via RSS or APIs, plus reputable Arabic and English outlets via RSS. **Store summary and URL only, never full text.** |
+| D7 | 1-minute data kept raw for **2 years, then compressed**. **1h and above kept forever.** |
+| D8 | Default display timezone **`Asia/Gaza`** (not `Asia/Jerusalem`, whose DST dates can differ). Storage stays UTC. |
+| D9 | **uv** (Python) and **pnpm** (frontend). |
+
+### 0.2 Changes to the plan
+
+1. **v1 forecast horizons: 1h, 4h, 24h, 7d, 30d.** 30d is **required for USD/ILS** because importer invoice planning depends on it. 15m, 3d, 90d and 180d are deferred.
+2. **BTCUSD primary source: Coinbase Exchange public `BTC-USD` data.** Binance `BTCUSDT` is stored as a **separate secondary series** (its own instrument mapping, quote currency USDT). It is **never relabelled as USD** and never merged into BTCUSD candles. CoinGecko is the independent reference.
+3. **The Importer Advisor moves to right after the market-data phase** (new Phase 3). It uses the **user-entered executable rate** as the price basis. It shows the **gap to the Bank of Israel representative rate** (with that rate's publication date) and **stores every entered rate** with its timestamp.
+4. The full SRS is committed as `docs/SRS.md`.
+5. **New required page: "Forecast Track Record" (سجل دقة التوقعات)**. It is v1 core scope, built in the Forecasting
+   phase (Phase 5), in Arabic and English. The full requirement is in §0.4.
+
+### 0.4 Forecast Track Record (requirement, added 2026-10-31)
+
+**Ledger:** one row per forecast, newest first. Columns: instrument, horizon, issued_at, expires_at, reference price,
+predicted price, lower and upper bound, bullish/neutral/bearish probabilities, model version and experimental flag.
+After expiry it adds: actual price, absolute error, percentage error, direction correct (yes/no), inside range (yes/no),
+Brier score and status.
+
+**Automatic evaluation** by a Celery job at expiry. There is no manual entry.
+- Actual price = the **last valid mid quote at or before `expires_at`, from the same provider** that supplied the
+  forecast's reference price, **no older than 5 minutes**.
+- If the market is closed or data is stale or missing at expiry, status = **`not_evaluable`** with a machine-readable reason
+  (`market_closed`, `stale_data`, `no_data`, `provider_mismatch`). **The actual price is never estimated or filled.**
+- USD/ILS rows also show the **Bank of Israel representative rate for that day** as a reference column. It is not used for scoring.
+
+**Immutability:** forecast rows cannot be changed after issue. A DB trigger is created together with the `forecasts`
+table in Phase 5. It allows only the `status` transition and blocks DELETE. Evaluation inserts into
+`forecast_evaluations`. Statuses: **`pending`, `evaluated`, `not_evaluable`, `invalidated`**.
+
+**Summary cards:** filterable by instrument, horizon, model and period (7/30/90 days/all). They show the number of forecasts,
+directional accuracy %, MAE, MAPE, range coverage % compared with the nominal interval, and mean Brier score. Each metric is shown
+side by side with the **random-walk baseline** (issued and evaluated by the same pipeline), plus "beats baseline: yes/no".
+**Every metric shows its sample size. Below 30 evaluated forecasts the result is labelled "insufficient sample".**
+
+**Charts:** predicted vs actual over time (per instrument and horizon, with the interval band), and a calibration chart
+(forecast probability bins vs observed frequency, with the count per bin).
+
+**Export:** ledger export to CSV and Excel (.xlsx), using the current filters.
+
+**Tests:** evaluation job on labelled fixture data (normal, market-closed, stale and missing cases); immutability
+trigger test; every metric (MAE, MAPE, directional accuracy, coverage, multi-class Brier) checked against hand-calculated values.
+
+**Design consequences and open points:**
+- **Direction needs a neutral band.** "Direction correct" and the 3-class Brier score need a definition of
+  bullish/neutral/bearish outcomes. Each forecast stores its own `neutral_band` (for example ±k × expected volatility for that
+  instrument and horizon) at issue time, so scoring never depends on a parameter chosen later. Brier = Σ over the 3
+  classes of (p − o)² with p in [0,1] (range 0–2). The page states this definition.
+- **Expiry in closed sessions.** With a 5-minute freshness rule, USD/ILS and XAU/USD forecasts that expire during a weekend
+  would always be `not_evaluable`. Issuance will therefore align `expires_at` to the next open session time of the
+  instrument's calendar, recorded on the row. The horizon label stays nominal, and the effective horizon is stored.
+- **Mid-quote availability (O1).** The 5-minute mid-quote rule needs bid/ask from the provider. If Twelve Data
+  Grow returns only a last price for USD/ILS or XAU/USD, there is no mid quote. That must be confirmed in Phase 2
+  (together with G1/G2). If bid/ask is not available, the decision is yours: either mark those forecasts `not_evaluable`, or explicitly
+  accept the provider's last price as the evaluation basis (recorded as `price_basis` on each evaluation).
+- **Coinbase BTC-USD** provides best bid/ask through its ticker, so BTCUSD mid quotes are expected to be available.
+
+### 0.3 Phase 2 entry gates (must be verified before Phase 2 code depends on them)
+
+A pre-check on 2026-10-31 used web-search snippets only, because the provider sites were not reachable from the build sandbox. It found:
+
+| Gate | Status | Notes |
+|---|---|---|
+| G1 Twelve Data Grow includes **XAU/USD** (real-time or delayed?) | **Unconfirmed** | Grow is listed as including commodities, but XAU/USD on Grow is not explicitly confirmed. Ask Twelve Data support or test with the key. |
+| G2 Twelve Data Grow includes **USD/ILS** | **Unconfirmed** | The pair is in their catalogue. One snippet mentions real-time forex as an add-on. |
+| G3 Twelve Data Grow price and credits | **Unconfirmed** | Grow appears tiered (about $29 to $79/month depending on credits per minute). Rate limits are per minute only, with no daily cap on Grow. The adapter must respect the per-minute credit budget. |
+| G4 Twelve Data licence fits use | **Consistent** | Support article: Basic/Grow data is for personal, non-commercial use and must not be displayed or redistributed to third parties. This matches D2. **The dashboard must not be shared with other people.** |
+| G5 Coinbase Exchange market-data terms | **Unconfirmed** | Public endpoints need no auth (`api.exchange.coinbase.com`, about 10 req/s per IP). Use is governed by the Coinbase "Market Data Terms of Use". Personal-use wording not yet read. |
+| G6 Coinbase reachable from EU VPS | **To test on VPS** | No geo restriction found. Servers are reported to be in AWS us-east-1, so expect latency from Frankfurt. |
+| G7 Binance reachable from EU VPS | **At risk** | Binance limited EU services from July 2026 (MiCA). `api.binance.com` returns HTTP 451 in blocked regions. `data-api.binance.vision` is a spot-only market-data mirror. Binance is **optional/secondary**, so failure here does not block v1. |
+| G8 CoinGecko Demo terms | **Consistent** | 30 calls/min, 10,000 calls/month, "Powered by CoinGecko API" link attribution required. Personal use is very likely fine. |
+
+`scripts/check_provider_reachability.py` (added in Phase 2) will be run **on the VPS** to settle G6 and G7.
 
 ---
 
@@ -17,6 +104,8 @@ Implementation starts only after this plan is reviewed and the open decisions in
 | Existing code | None. Everything is greenfield. |
 | Existing CI | None. |
 | Dev container tooling | Python 3.13, Node 22, Docker 29 and PostgreSQL 16 client are available. |
+
+*(Recorded at planning time. Phase 1 has since been implemented. See `IMPLEMENTATION_STATUS.md`.)*
 
 Consequence: nothing can be assumed to be implemented (SRS §24 rule 4). Every feature in
 `IMPLEMENTATION_STATUS.md` starts as **Not started**.
@@ -136,8 +225,7 @@ model versions and performance are always keyed by `instrument_id`.
 - News text is untrusted. It is passed inside delimited data fields with an explicit
   "data, not instructions" system policy, truncated, and stripped of markup. The LLM has **no tools**
   and cannot trigger actions (SRS §19).
-- Provider-independent: an `LLMClient` interface with one adapter first. The adapter is chosen in
-  open decision D5.
+- Provider-independent: an `LLMClient` interface. The first adapter is the Anthropic API (D5).
 - If the LLM is unavailable, the platform still shows the structured analysis without narrative.
 
 ### 3.6 Paper trading engine
@@ -199,21 +287,22 @@ Details and licensing are in [`docs/DATA_SOURCES.md`](../DATA_SOURCES.md). Summa
 | Need | Candidate | Cost | Main limitation |
 |---|---|---|---|
 | USD/ILS official reference | Bank of Israel (public series / SDMX API) | Free | Once-daily **representative rate**. It is not an executable quote and has no intraday data. |
-| USD/ILS intraday bid/ask | Licensed FX vendor (e.g. OANDA, Twelve Data, Polygon.io, Alpha Vantage premium) | Paid | Shekel liquidity is thin outside Israeli/European hours. Redistribution in a multi-user UI usually needs a display licence. |
-| XAU/USD spot | Licensed metals or multi-asset vendor (same shortlist) | Paid | No free source provides reliable intraday bid/ask with redistribution rights. LBMA benchmark prices are IBA-licensed. |
+| USD/ILS intraday | **Twelve Data Grow** (D1) | Individual plan | Personal display only (G4). Plan coverage not yet confirmed (G2). Quotes are indicative and not a bank's executable rate. |
+| XAU/USD spot | **Twelve Data Grow** (D1) | Individual plan | Plan coverage not yet confirmed (G1). LBMA benchmark prices are IBA-licensed and not used. |
 | Gold futures | CME/COMEX via vendor | Paid | Exchange data fees apply. |
-| BTC/USD spot, candles, order book, funding, open interest | Binance public REST/WebSocket | Free | **Geo-restricted** (blocked from US IPs, which matters for the hosting region). Weight-based rate limits. BTCUSDT is not BTC/USD, so the USDT basis must be documented. Terms of use apply to redistribution. |
+| **BTC/USD primary** spot, candles, order book | **Coinbase Exchange** public REST/WebSocket (`BTC-USD`) | Free | Market Data Terms of Use apply (G5). About 10 req/s per IP. |
+| BTC/USDT secondary, funding, open interest | Binance public REST/WebSocket | Free | **Geo-restricted.** EU services limited since July 2026 (G7). Weight-based rate limits. Stored as a separate USDT series, never relabelled as USD. |
 | BTC independent reference | CoinGecko API | Free tier / paid | Free (Demo) tier has low rate limits and needs attribution. Commercial use needs a paid plan. |
 | Liquidations, ETF flows, on-chain | Coinglass, Glassnode, CryptoQuant (paid); mempool.space (free, limited) | Mostly paid | Optional modules, shown as "unavailable" when not configured (SRS §2.2). |
 | US rates, yields, real yields, CPI, PCE | FRED API, BLS API, BEA API, US Treasury | Free (API key) | FRED series are revised. Point-in-time (ALFRED vintages) is needed for backtests. |
-| Dollar index | ICE **DXY** is proprietary and licensed | Paid | Free alternative: Fed Broad Dollar Index (FRED `DTWEXBGS`, daily, lagged). The UI must label which one is used. |
+| Dollar index | **Fed Broad Dollar Index** (FRED `DTWEXBGS`) (D4) | Free | Daily and lagged. Labelled "Fed Broad Dollar Index", never "DXY". |
 | Israel macro | Bank of Israel, Israel Central Bureau of Statistics | Free | Publication formats vary. Parsers need tests on real samples. |
 | Gold positioning | CFTC Commitments of Traders | Free | Weekly, released with a lag (Tuesday data published Friday). |
 | Gold ETF / central-bank flows | World Gold Council | Restricted | Terms limit automated reuse. Manual import or licence needed. |
 | Economic calendar | Official release calendars (BLS, BEA, FOMC, BoI, CBS), or a paid calendar API | Free / paid | No reliable free consolidated calendar API exists. |
 | News (EN/AR) | Official RSS (Fed, BoI, Treasury, SEC), GDELT, licensed news API | Free / paid | Copyright: store **title, summary, URL only**. NewsAPI's free tier is non-commercial and delayed. |
 | Notifications | Telegram Bot API, SMTP provider | Free / low cost | Telegram rate limits per bot and chat. |
-| LLM | Provider-independent adapter | Paid per token | Latency and cost. Must degrade gracefully. |
+| LLM | Anthropic API (Claude) behind `LLMClient` (D5) | Paid per token | Latency and cost. Must degrade gracefully. |
 
 ---
 
@@ -222,21 +311,21 @@ Details and licensing are in [`docs/DATA_SOURCES.md`](../DATA_SOURCES.md). Summa
 This follows the SRS §21 phases. Each phase ends with its acceptance criteria demonstrated and documented
 in `IMPLEMENTATION_STATUS.md`. If a critical criterion fails, the next phase does not start.
 
-| Phase | Weeks | Gate (must be demonstrated) |
-|---|---|---|
-| 1 Foundation | 1–2 | `docker compose up` gives a healthy API, DB with migrations, auth with RBAC tests, instrument seed, CI green |
-| 2 Market data | 3–4 | All three instruments ingest real data from at least one provider. Quality rules have unit tests. An outage simulation leaves the app running. Stale data disables signals. |
-| 3 Analysis | 5–6 | Indicators match reference datasets within tolerance. No-lookahead test passes. News pipeline stores source plus URL. Economic releases have `released_at`. |
-| 4 Forecasting | 7–9 | Baselines plus at least one model per instrument for at least two horizons. Walk-forward report exists. Forecasts are immutable (trigger test). Evaluation job and calibration metrics run. |
-| 5 AI | 10 | Structured AI output validated. Numeric cross-check test and prompt-injection test suite pass. |
-| 6 Paper trading + importer | 11–12 | Ledger reconciliation property tests, fill-rule tests (spread, slippage, gaps, SL/TP) and importer calculations tested |
-| 7 Dashboard + notifications | 13–14 | All pages in AR/EN, RTL/LTR Playwright tests, Telegram/email delivery, reports with sources |
-| 8 Hardening | 15–16 | Security review, load test, backup restore drill, UAT |
+| Phase | Gate (must be demonstrated) |
+|---|---|
+| 1 Foundation | `docker compose up` gives a healthy API, DB with migrations, auth with RBAC tests, instrument seed, CI green |
+| 2 Market data | Entry gates G1–G8 resolved. All three instruments ingest real data (Twelve Data for USD/ILS and XAU/USD, Coinbase for BTC/USD, plus BoI reference and CoinGecko reference). Quality rules have unit tests. An outage simulation leaves the app running. Stale data disables signals. |
+| **3 Importer Advisor** (moved up) | Uses the user-entered executable rate. Shows the gap to the BoI representative rate with its date. Entered rates are stored. Every calculation (now, installments, scenarios, worst case, break-even, shortfall) has tests in `Decimal`. Minimal AR/EN UI page. |
+| 4 Analysis | Indicators match reference datasets within tolerance. No-lookahead test passes. News pipeline stores source plus URL. Economic releases have `released_at`. |
+| 5 Forecasting | **Forecast Track Record page meets §0.4** (automatic evaluation, `not_evaluable` cases, sample-size labels, export). Baselines plus models for **1h, 4h, 24h, 7d and 30d** (30d mandatory for USD/ILS). Walk-forward report exists. Forecasts are immutable (trigger test). Evaluation job and calibration metrics run. The Importer Advisor gains forecast-based scenario ranges, labelled as forecasts and not hedges. |
+| 6 AI | Structured AI output validated. Numeric cross-check test and prompt-injection test suite pass. |
+| 7 Paper trading | Ledger reconciliation property tests, fill-rule tests (spread, slippage, gaps, SL/TP) |
+| 8 Dashboard + notifications | All pages in AR/EN, RTL/LTR Playwright tests, Telegram/email delivery, reports with sources |
+| 9 Hardening | Security review, load test, backup restore drill, UAT |
 
-**Recommended scope reduction for the first forecasting release:** start with horizons
-**1h, 24h and 7d** for all three instruments. Add 15m/4h after the intraday data licence is confirmed,
-and 30d/90d/180d once enough history and point-in-time macro data exist. Long horizons have very few
-independent test samples, so honest evaluation there is weak (SRS §3 allows this).
+**v1 horizons (approved):** 1h, 4h, 24h, 7d and 30d (§0.2). 30d forecasts have few independent
+out-of-sample points, so their evaluation reports must show the sample size, and they stay labelled
+**experimental** until enough history exists.
 
 ---
 
@@ -244,10 +333,10 @@ independent test samples, so honest evaluation there is weak (SRS §3 allows thi
 
 | # | Risk | Impact | Mitigation |
 |---|---|---|---|
-| R1 | **No licensed intraday feed for USD/ILS and XAU/USD yet** | Blocks intraday features, paper fills and 15m–4h forecasts for 2 of 3 instruments | Decide vendor early (D1). Until then, run daily-only mode using BoI and a free daily source, clearly labeled. |
-| R2 | Redistribution rights: showing vendor data to multiple users is often a separate licence | Legal exposure | Record the licence per provider in `DATA_SOURCES.md`. Restrict the UI to licensed users. |
-| R3 | Binance geo-blocking from the hosting region | BTC ingestion fails | Choose hosting region accordingly. Keep CoinGecko or another exchange as a fallback adapter. |
-| R4 | DXY is proprietary | Feature unavailable or unlicensed | Use the Fed Broad Dollar Index, labeled, unless DXY is licensed. |
+| R1 | **Twelve Data Grow coverage for USD/ILS and XAU/USD unconfirmed** (G1, G2) | Blocks intraday features for 2 of 3 instruments | Verify before Phase 2. If XAU/USD is missing on Grow, choose a different tier or source before writing the adapter. |
+| R2 | Individual-plan licences forbid showing data to third parties | Legal exposure | Single-user deployment (D2), no public signup, login required for every page. Licence recorded per provider. |
+| R3 | Binance EU restrictions (G7) | Secondary BTCUSDT series unavailable | Coinbase is primary. Binance is optional. Run the reachability script on the VPS. |
+| R4 | DXY is proprietary | Different index from the SRS text | Fed Broad Dollar Index (D4), labelled everywhere. |
 | R5 | Low inherent predictability (FX and BTC are close to random walk at short horizons) | Models may not beat baselines | This is expected and must be reported honestly. Forecasts that fail to beat the baseline are labeled **experimental** (SRS §10.5). |
 | R6 | Look-ahead leakage through revised macro data or misaligned candles | Inflated backtests | `as_of` access layer, `released_at` timestamps, ALFRED vintages, leakage unit tests |
 | R7 | Prompt injection through news | Corrupted AI output | Tool-less LLM, delimiting, numeric cross-check, injection test corpus |
@@ -290,14 +379,27 @@ migration up/down on real Timescale, instrument endpoints, health checks, Playwr
 
 ### Phase 2 – Market data
 
-Provider interface (SRS §5.1) with capability flags. Adapters: BoI (official USD/ILS), Binance (BTC REST
-and WebSocket), CoinGecko (BTC reference), plus licensed FX/metals vendor(s) once chosen. Historical
+Provider interface (SRS §5.1) with capability flags. Adapters: BoI (official USD/ILS reference),
+**Twelve Data** (USD/ILS and XAU/USD, credit-budgeted), **Coinbase Exchange** (BTC-USD primary, REST and WebSocket),
+CoinGecko (BTC reference, with attribution in the UI), Binance (BTCUSDT secondary series, optional). Provider reachability script run on the VPS. Historical
 backfill CLI. Validation rules, each with its own tests. Quote and candle repositories (hypertables).
 Instrument data-status service. Provider health in `market_providers`. Live quote WebSocket channel. Endpoints:
 `/markets/{symbol}/quote|candles|statistics`, `/admin/providers`. Development fixtures live only under
 `backend/tests/fixtures/` and are labeled as such.
 
-### Phase 3 – Analysis
+### Phase 3 – Importer Advisor (moved up, §0.2)
+
+Inputs: invoice USD amount, due date, **user-entered executable buy rate** (with bank or source note),
+available ILS balance, risk tolerance, transfer and conversion fees (fixed and %), optional installment
+schedule. Every entered rate is stored in `importer_rate_entries` with `entered_at`. Outputs: full
+purchase now, installment cost, scenario table over a user-defined rate grid, cost of waiting, worst-case exposure
+within the chosen grid, break-even rate, ILS shortfall. Shows the **gap between the executable rate and
+the latest Bank of Israel representative rate** (absolute and %), with that rate's publication date.
+If no BoI rate is stored, it says so and shows no gap. All maths in `Decimal`, with tests. API:
+`/importer/scenarios`, `/importer/compare-strategies`, `/importer/history`. Minimal AR/EN page.
+Forecast-based ranges are added in Phase 5.
+
+### Phase 4 – Analysis
 
 Indicator library (all of SRS §7.1) with reference tests. Candle resampling with correct boundaries per
 timeframe and session. Support/resistance, swings, Fibonacci, candlestick patterns, chart patterns
@@ -307,37 +409,37 @@ statistics only where sample size allows). News ingestion, dedupe, language dete
 sentiment, impact scoring and claim-type labeling (fact, reported claim, opinion, speculation, unconfirmed).
 Charting on asset pages.
 
-### Phase 4 – Forecasting
+### Phase 5 – Forecasting
 
 Feature store with point-in-time joins. Baselines (random walk, persistence, historical volatility).
 ARIMA/SARIMAX and GARCH. Random Forest, XGBoost and LightGBM. Monte Carlo. Walk-forward framework with
 purging and embargo. Leakage tests. Model registry and promotion rules (must beat baseline out-of-sample).
 Ensemble with validated weights and probability calibration (isotonic or Platt on validation folds).
-Forecast issuance job with expiry and invalidation conditions. Immutable storage triggers. Evaluation job (MAE, RMSE,
+Horizons 1h, 4h, 24h, 7d and 30d. **Forecast Track Record page (§0.4)**, including the evaluation-at-expiry job, baseline
+side-by-side cards, calibration chart and CSV/XLSX export. Forecast issuance job with expiry and invalidation conditions. Immutable storage triggers. Evaluation job (MAE, RMSE,
 MAPE where valid, directional accuracy, Brier, log loss, coverage, width, pinball). Forecast and
 model-performance endpoints.
 
-### Phase 5 – AI intelligence
+### Phase 6 – AI intelligence
 
 LLM adapter. Prompt builders per asset. Output schema validation. Numeric grounding check. Injection
 test corpus. Cross-asset engine (rolling correlations over several windows with sample size and confidence,
 regime comparison, divergence alerts). AI analyst endpoint and scheduled narrative generation.
 
-### Phase 6 – Paper trading and importer advisor
+### Phase 7 – Paper trading
 
 Accounts (USD/ILS currency). Orders (market, limit, stop, SL/TP). Fill engine with spread, slippage,
 commission, sessions, gaps, partial fills and swap/financing. Positions with MFE and MAE. Ledger and reconciliation.
 Risk metrics (equity, exposure, drawdown, win rate, profit factor, Sharpe with a minimum-sample guard).
-Signal-based mode. Backtesting mode using the same fill engine on historical data. Importer
-advisor: full purchase now, installments, waiting scenarios, worst case, break-even, shortfall, history.
+Signal-based mode. Backtesting mode using the same fill engine on historical data.
 
-### Phase 7 – Dashboard and notifications
+### Phase 8 – Dashboard and notifications
 
 All 20 pages. Global overview. Asset pages. Forecast center. Cross-asset dashboard. Alerts engine (all
 SRS §16.1 types). Telegram and email delivery. Daily, weekly and monthly reports with timestamps and source links.
 Full AR/EN coverage. Responsive layout.
 
-### Phase 8 – Hardening
+### Phase 9 – Hardening
 
 Threat model and security review. Dependency audit. Load test (k6 or Locust). Backup and restore drill.
 Data-reliability chaos tests (provider down, stale feed, clock skew). Forecast validation report. UAT checklist.
@@ -352,16 +454,6 @@ Synthetic market data outside labeled test fixtures.
 
 ---
 
-## 10. Open decisions (need your answers before or during Phase 1–2)
+## 10. Open decisions
 
-| ID | Decision | Recommendation |
-|---|---|---|
-| D1 | Licensed FX and metals data vendor and budget for USD/ILS and XAU/USD intraday bid/ask | Shortlist OANDA, Twelve Data and Polygon.io. Compare ILS coverage, history depth and display licence. |
-| D2 | Users: single owner, small team, or public multi-user? | Start with a small invite-only team. This decides the licensing scope (R2). |
-| D3 | Hosting provider and region | Non-US region so Binance public endpoints work (R3). |
-| D4 | DXY: license ICE DXY or use the Fed Broad Dollar Index? | Fed Broad index first, clearly labeled. |
-| D5 | LLM provider for the AI analyst | Any. The adapter keeps it swappable. |
-| D6 | News sources, especially Arabic-language outlets and any paid news API | Official sources plus GDELT first. Add licensed feeds later. |
-| D7 | Data retention for 1-minute data and quotes | Keep 1-minute data for 24 months compressed and quotes for 90 days. Keep aggregates indefinitely. |
-| D8 | Default display timezone | `Asia/Jerusalem`, configurable per user |
-| D9 | Package manager preference (uv or Poetry; pnpm or npm) | uv and pnpm |
+All of D1–D9 are answered (see §0.1). The remaining open items are the Phase 2 entry gates in §0.3.

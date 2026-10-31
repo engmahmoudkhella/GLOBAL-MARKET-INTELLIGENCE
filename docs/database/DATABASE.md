@@ -1,6 +1,7 @@
 # GMI – Database Design (proposal, v0)
 
-**Status:** Proposal. Not yet migrated. Phase 1 implements the foundation tables. Other tables arrive in their phase.
+**Status:** Phase 1 tables are **implemented** (migration `0001_foundation`): `users`, `user_sessions`, `instruments`,
+`market_providers`, `instrument_provider_symbols`, `system_audit_logs`, `job_runs`. Other tables are a proposal and arrive in their phase.
 
 Engine: PostgreSQL 16 + TimescaleDB. All timestamps are `timestamptz` and stored in UTC.
 Prices use `NUMERIC(24,10)`. Money (balances, fees, P&L) uses `NUMERIC(28,8)`.
@@ -44,8 +45,8 @@ system_audit_logs, job_runs
 
 | Table | Refinements |
 |---|---|
-| `users` | `role` ∈ {admin, analyst, viewer}. `email` unique (citext). `timezone` IANA name. `preferred_language` ∈ {ar, en}. `is_active`. |
-| `instruments` | `symbol` unique ∈ {USDILS, XAUUSD, BTCUSD}. `configuration_json` validated by the `InstrumentConfig` Pydantic schema. |
+| `users` | `role` ∈ {admin, analyst, viewer}. `email` unique, stored lowercase (CHECK). `timezone` IANA name. `preferred_language` ∈ {ar, en}. `is_active`. |
+| `instruments` | `symbol` unique. Primary instruments are USDILS, XAUUSD and BTCUSD. **BTCUSDT** is a separate `role='secondary'` instrument (quote USDT) so Binance data is never stored as BTCUSD. Adds `role` ∈ {primary, secondary}. `configuration_json` is validated by the `InstrumentConfig` Pydantic schema. |
 | `market_providers` | Adds `capabilities` (jsonb list), `licence_notes`, `consecutive_failures`. **Credentials are never stored here.** They come from env or the secret store. |
 | `market_quotes` | Hypertable on `observed_at`. PK `(instrument_id, provider_id, observed_at)`. Adds `latency_ms`. `data_quality_status` ∈ {verified, suspect, rejected}. |
 | `market_candles` | Hypertable on `open_time`. PK `(instrument_id, provider_id, timeframe, open_time)`. Adds `is_complete`, `data_quality_status`, `received_at`. |
@@ -53,8 +54,8 @@ system_audit_logs, job_runs
 | `news_articles` | Stores **title, summary and URL only**, never full copyrighted text. Unique `(provider_id, external_id)`. Adds `claim_type`. |
 | `news_asset_impacts` | `sentiment` and `expected_direction` are separate columns (sentiment ≠ direction, SRS §9.3). Adds `time_sensitivity`, `confirmation_status`. |
 | `economic_events` | Adds `released_at` (when the actual value became public) and `unit`. |
-| `forecasts` | `status` ∈ {active, expired, invalidated, evaluated}. Adds `horizon`, `is_experimental`, `data_status_at_issue`. A **trigger blocks UPDATE of every column except `status`** and blocks DELETE. |
-| `forecast_evaluations` | One row per forecast per evaluation method. Insert-only. |
+| `forecasts` | `status` ∈ {pending, evaluated, not_evaluable, invalidated} (plan §0.4). Adds `reference_provider_id`, `neutral_band`, `effective_expires_at`. Adds `horizon`, `is_experimental`, `data_status_at_issue`. A **trigger blocks UPDATE of every column except `status`** and blocks DELETE. |
+| `forecast_evaluations` | Insert-only. Adds `outcome` ∈ {evaluated, not_evaluable}, `not_evaluable_reason`, `actual_quote_observed_at`, `actual_provider_id`, `price_basis`, `brier_score`, `boi_reference_rate` and `boi_reference_date` (USD/ILS display only, not scored). `actual_price` is NULL when not evaluable. |
 | `trading_signals` | Insert-only except `status`. FK to `forecasts`. |
 | `paper_accounts` | Adds `account_type` ∈ {forex, gold, bitcoin, combined}. `current_balance` is a cached value, reconciled against the ledger. |
 | `paper_orders` | Adds `limit_price`, `stop_price`, `time_in_force`, `parent_position_id` (for SL/TP), `reject_reason`. A `simulated` column is always true and protected by a CHECK constraint. |
@@ -62,13 +63,13 @@ system_audit_logs, job_runs
 | `paper_transactions` | Double-entry: `debit_account`, `credit_account`, `amount`, `currency`. An invariant test asserts the ledger balances. |
 | `alerts` | `condition_json` validated per `alert_type`. Adds `channels`, `cooldown_seconds`. |
 | `model_registry` | Adds `artifact_uri`, `artifact_sha256`, `feature_set_hash`, `baseline_comparison` (jsonb). `deployment_status` ∈ {candidate, approved, retired}. |
-| `system_audit_logs` | Insert-only. |
+| `system_audit_logs` | Insert-only (trigger `trg_audit_log_append_only`; the only allowed UPDATE is the FK's `ON DELETE SET NULL` of `user_id`). |
 
 ## Added tables
 
 | Table | Key columns |
 |---|---|
-| `user_sessions` | id (random 256-bit, stored hashed), user_id, created_at, expires_at, revoked_at, ip, user_agent |
+| `user_sessions` | token_hash (SHA-256 of a 256-bit token), csrf_token_hash, user_id, created_at, expires_at, revoked_at, ip, user_agent |
 | `instrument_provider_symbols` | instrument_id, provider_id, provider_symbol, notes (e.g. "BTCUSDT – USDT quote, not USD") |
 | `data_quality_events` | instrument_id, provider_id, event_type ∈ {missing_candle, duplicate, invalid_ohlc, outlier, stale, outage, timestamp_skew, abnormal_spread}, detected_at, window_start, window_end, details_json |
 | `economic_series` | code, country, name, unit, frequency, source, source_url |
@@ -76,13 +77,15 @@ system_audit_logs, job_runs
 | `technical_patterns` | instrument_id, timeframe, pattern_type, detected_at, boundaries_json, confirmation_status, invalidation_condition |
 | `forecast_inputs` | forecast_id, candle_range_start, candle_range_end, feature_set_hash, input_snapshot_uri |
 | `paper_fills` | order_id, quantity, price, spread_cost, slippage, commission, filled_at, price_basis ∈ {bid_ask, estimated_spread} |
-| `importer_scenarios` | user_id, inputs_json, results_json, rate_reference (source, timestamp), created_at |
+| `importer_rate_entries` | user_id, rate (executable USD/ILS buy rate entered by the user), source_note, entered_at, boi_rate, boi_rate_date (reference at entry time, nullable) |
+| `importer_scenarios` | user_id, rate_entry_id, inputs_json, results_json, created_at |
 | `notification_deliveries` | alert_id, channel, status, attempts, last_error, sent_at |
 | `job_runs` | job_name, idempotency_key (unique), status, started_at, finished_at, error |
 
-## Retention (pending decision D7)
+## Retention (decision D7)
 
-- `market_quotes`: compress after 7 days, drop after 90 days.
-- `market_candles` 1m: compress after 30 days, keep 24 months. Higher timeframes kept indefinitely.
+- `market_candles` 1m: **raw (uncompressed) for 2 years, then compressed**. Not dropped automatically.
+- `market_candles` 1h and above: **kept forever**.
+- `market_quotes`: compress after 7 days, drop after 90 days (quotes are not covered by D7 and can be revisited).
 - Continuous aggregates are built from 1m candles where the provider does not supply higher timeframes.
 - Forecasts, evaluations, signals, ledger and audit logs: **never deleted**.

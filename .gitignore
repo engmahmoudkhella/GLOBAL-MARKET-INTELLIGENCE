@@ -22,3 +22,7 @@ ml/artifacts/*
 .DS_Store
 .idea/
 .vscode/
+.sbx/
+.sbx/
+.screens/
+dump.rdb
