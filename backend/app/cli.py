@@ -78,5 +78,70 @@ def set_password(
         typer.echo("Password updated; existing sessions revoked.")
 
 
+@cli.command("backfill-candles")
+def backfill_candles(
+    symbol: str = typer.Option("BTCUSD"),
+    provider: str = typer.Option("coinbase"),
+    timeframe: str = typer.Option("1h", help="1m | 5m | 15m | 1h | 1d"),
+    days: int = typer.Option(30, min=1, max=3650),
+) -> None:
+    """Import historical candles (validated; nothing is filled). Safe to re-run."""
+    from datetime import timedelta
+
+    from app.core.clock import utcnow
+    from app.ingestion import service
+    from app.providers import registry
+
+    adapter = registry.create(provider)
+    end = utcnow()
+    start = end - timedelta(days=days)
+    with get_sessionmaker()() as session:
+        try:
+            r = service.ingest_candles(
+                session,
+                symbol,
+                adapter,
+                timeframe,  # type: ignore[arg-type]
+                start,
+                end,
+            )
+        finally:
+            adapter.close()
+        session.commit()
+    typer.echo(
+        f"ok={r.ok} stored={r.stored} skipped={r.skipped} statuses={r.statuses} "
+        f"issues={r.issues} error={r.error}"
+    )
+    if not r.ok:
+        raise typer.Exit(1)
+
+
+@cli.command("backfill-reference")
+def backfill_reference(
+    symbol: str = typer.Option("USDILS"),
+    days: int = typer.Option(365, min=1, max=3650),
+) -> None:
+    """Import Bank of Israel representative rates (reference only, never quotes)."""
+    from datetime import timedelta
+
+    from app.core.clock import utcnow
+    from app.ingestion import service
+    from app.providers import registry
+
+    adapter = registry.create("boi")
+    today = utcnow().date()
+    with get_sessionmaker()() as session:
+        try:
+            r = service.ingest_reference_rates(
+                session, symbol, adapter, today - timedelta(days=days), today
+            )
+        finally:
+            adapter.close()
+        session.commit()
+    typer.echo(f"ok={r.ok} stored={r.stored} skipped={r.skipped} issues={r.issues} error={r.error}")
+    if not r.ok:
+        raise typer.Exit(1)
+
+
 if __name__ == "__main__":
     cli()

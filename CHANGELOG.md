@@ -2,6 +2,27 @@
 
 ## [Unreleased]
 
+### Phase 2 – groundwork (2026-10-31)
+#### Added
+- Provider interface with capability flags. Shared HTTP client (timeouts, exponential backoff with jitter, Retry-After, pacing).
+  Strict response parsing (`ProviderDataError` on any contract deviation).
+- Coinbase Exchange adapter (BTC-USD ticker, candles with 300-bucket pagination, L2 book, product status, server time).
+- Bank of Israel adapter (latest representative rates via PublicApi, history via SDMX `RER_<CUR>_ILS`). Reference rates only.
+- DST-aware session calendars. Data-quality rules (OHLC, crossed or missing quotes, timestamp skew, misalignment,
+  duplicates, MAD outliers, abnormal spread, missing-candle gaps, staleness, outages).
+- Migration `0003_market_data`: `market_quotes` and `market_candles` hypertables with compression and retention per D7,
+  `data_quality_events`, `official_reference_rates`.
+- Ingestion service with provider health tracking, immutable completed candles, gap and staleness events, freshness.
+- Celery ingestion tasks (off unless `GMI_INGESTION_ENABLED=true`). CLI `backfill-candles`, `backfill-reference`.
+- API: `/api/v1/markets/{symbol}/quote|candles|reference-rates`.
+- Overview shows per-instrument data status, and a verified price (exact decimal rounding, timezone-labelled time) when one exists.
+- Scripts: `check_provider_reachability.py`, `check_provider_contracts.py` (run on the VPS).
+- Docs: `DATA_QUALITY.md`. Plan §0.2a records the owner's answers (Twelve Data tier, mid/last price type, trading-time horizons).
+
+#### Fixed
+- CI e2e job hang: `wait-on` used HEAD, which FastAPI rejects with 405. Now uses `http-get://` with timeouts, and jobs have time limits.
+
+
 ### Phase 1 – Foundation (2026-10-31)
 #### Added
 - Backend (FastAPI, SQLAlchemy 2, Alembic, psycopg 3, uv): settings from env, JSON logging with request ids,

@@ -27,9 +27,13 @@ The browser sees **one origin**. It never calls third-party providers and never 
 | `audit/` | Phase 1 | append-only audit writer |
 | `instruments/` | Phase 1 | `InstrumentConfig` schema (sessions, staleness, horizons…), read service |
 | `jobs/` | Phase 1 | idempotent job runner backed by `job_runs` |
-| `tasks/` | Phase 1 | Celery app + `system.heartbeat` (every 60 s) |
-| `api/` | Phase 1 | `/health/*`, `/api/v1/auth/*`, `/api/v1/instruments*`, `/api/v1/admin/{providers,jobs,system-health}` |
-| `cli.py` | Phase 1 | `create-user`, `set-password` |
+| `tasks/` | Phase 1–2 | Celery app, `system.heartbeat` (every 60 s), and ingestion tasks (Coinbase quote 15 s, candles 1m/1h/1d, BoI reference 30 min, freshness 60 s). Ingestion is scheduled **only when `GMI_INGESTION_ENABLED=true`**. |
+| `markets/` | Phase 2 | session calendars (`MarketCalendar.is_open`, DST-aware), market-data API schemas |
+| `providers/` | Phase 2 | provider interface (SRS §5.1) with capability flags; HTTP client (timeouts, retries, backoff, pacing); strict parsers; adapters: **Coinbase Exchange** (BTC-USD) and **Bank of Israel** (reference rates). Twelve Data on hold. |
+| `quality/` | Phase 2 | data-quality rules (see `DATA_QUALITY.md`) |
+| `ingestion/` | Phase 2 | provider → validation → storage. Provider health (active/degraded/down). Gap and staleness events. Freshness. |
+| `api/` | Phase 1–2 | `/health/*`, `/api/v1/auth/*`, `/api/v1/instruments*`, `/api/v1/admin/{providers,jobs,system-health}` |
+| `cli.py` | Phase 1–2 | `create-user`, `set-password`, `backfill-candles`, `backfill-reference` |
 
 Rule: modules talk through their `service.py`. Routers stay thin.
 

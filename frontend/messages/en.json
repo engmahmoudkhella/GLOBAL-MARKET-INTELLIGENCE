@@ -51,7 +51,7 @@
   },
   "overview": {
     "instruments": "Configured instruments",
-    "noMarketData": "No market data yet. Provider integrations arrive in phase 2.",
+    "noMarketData": "Prices appear only when verified data from a configured provider exists. Nothing is estimated.",
     "primary": "Primary",
     "secondary": "Secondary series",
     "horizons": "Forecast horizons",
@@ -62,6 +62,18 @@
       "reference": "reference",
       "secondary": "secondary"
     },
-    "providerStatus": "status: {status}"
+    "providerStatus": "status: {status}",
+    "dataStatus": "Data status",
+    "status": {
+      "fresh": "Fresh",
+      "stale": "Stale – signals disabled",
+      "market_closed": "Market closed",
+      "no_data": "No data yet"
+    },
+    "observedAt": "Observed {time} via {provider}",
+    "priceType": {
+      "mid": "mid",
+      "last": "last"
+    }
   }
 }

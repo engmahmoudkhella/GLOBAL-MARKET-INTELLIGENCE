@@ -70,6 +70,10 @@ test("signed-in shell: paper-only banner, 21 sections, instruments without price
   }
   await expect(page.getByTestId("instrument-USDILS")).toContainText("30d");
   await expect(page.getByTestId("instrument-BTCUSD")).toContainText("Coinbase");
+  // Freshness is always visible; with no ingested data it says so and shows no price.
+  for (const sym of ["USDILS", "XAUUSD", "BTCUSD"]) {
+    await expect(page.getByTestId(`status-${sym}`)).toHaveText("No data yet");
+  }
 
   await nav.getByRole("link", { name: "Forecast Track Record" }).click();
   await expect(page.getByTestId("section-title")).toHaveText("Forecast Track Record");

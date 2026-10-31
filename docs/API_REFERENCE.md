@@ -14,6 +14,9 @@ Authentication uses the session cookie set by login. Every non-GET request needs
 | GET | `/api/v1/auth/me` | session | Current user |
 | GET | `/api/v1/instruments?include_secondary=true` | session | Instruments with validated configuration and provider mappings |
 | GET | `/api/v1/instruments/{symbol}` | session | One instrument (case-insensitive symbol). 404 if unknown. |
+| GET | `/api/v1/markets/{symbol}/quote` | session | Latest **verified** quote from the primary provider: `provider`, `bid/ask/mid/last_price` (decimal strings), `price_type` (mid/last), `observed_at`, `received_at`, `age_seconds`, `data_status` (fresh/stale/market_closed/no_data), `signals_allowed`. All price fields are null when there is no data. |
+| GET | `/api/v1/markets/{symbol}/candles?timeframe=&start=&end=&provider=&include_rejected=&limit=` | session | Stored candles (oldest first, ≤ 2000). `start` and `end` need a timezone. Rejected candles are excluded by default. 422 `bad_range` for an invalid range. |
+| GET | `/api/v1/markets/{symbol}/reference-rates?start=&end=` | session | Official reference rates (USDILS: Bank of Israel representative rate). These are not executable prices. |
 | GET | `/api/v1/admin/providers` | admin | Provider status, licence notes and attribution (never credentials or raw config) |
 | GET | `/api/v1/admin/jobs?limit=&offset=` | admin | Paginated `job_runs` (limit ≤ 200) |
 | GET | `/api/v1/admin/system-health` | admin | Detailed readiness (TimescaleDB version, migration revision) |

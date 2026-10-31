@@ -1,7 +1,7 @@
 # GMI – Database Design (proposal, v0)
 
 **Status:** Phase 1 tables are **implemented** (migration `0001_foundation`): `users`, `user_sessions`, `instruments`,
-`market_providers`, `instrument_provider_symbols`, `system_audit_logs`, `job_runs`. Other tables are a proposal and arrive in their phase.
+`market_providers`, `instrument_provider_symbols`, `system_audit_logs`, `job_runs`. Migration `0003_market_data` adds `market_quotes` and `market_candles` (hypertables, with compression and retention policies per D7), `data_quality_events` and `official_reference_rates`. Other tables are a proposal and arrive in their phase.
 
 Engine: PostgreSQL 16 + TimescaleDB. All timestamps are `timestamptz` and stored in UTC.
 Prices use `NUMERIC(24,10)`. Money (balances, fees, P&L) uses `NUMERIC(28,8)`.
@@ -54,8 +54,8 @@ system_audit_logs, job_runs
 | `news_articles` | Stores **title, summary and URL only**, never full copyrighted text. Unique `(provider_id, external_id)`. Adds `claim_type`. |
 | `news_asset_impacts` | `sentiment` and `expected_direction` are separate columns (sentiment ≠ direction, SRS §9.3). Adds `time_sensitivity`, `confirmation_status`. |
 | `economic_events` | Adds `released_at` (when the actual value became public) and `unit`. |
-| `forecasts` | `status` ∈ {pending, evaluated, not_evaluable, invalidated} (plan §0.4). Adds `reference_provider_id`, `neutral_band`, `effective_expires_at`. Adds `horizon`, `is_experimental`, `data_status_at_issue`. A **trigger blocks UPDATE of every column except `status`** and blocks DELETE. |
-| `forecast_evaluations` | Insert-only. Adds `outcome` ∈ {evaluated, not_evaluable}, `not_evaluable_reason`, `actual_quote_observed_at`, `actual_provider_id`, `price_basis`, `brier_score`, `boi_reference_rate` and `boi_reference_date` (USD/ILS display only, not scored). `actual_price` is NULL when not evaluable. |
+| `forecasts` | `status` ∈ {pending, evaluated, not_evaluable, invalidated} (plan §0.4). Adds `reference_provider_id`, `neutral_band`, `horizon_basis` ∈ {trading_time, calendar_time} (`expires_at` is the calendar timestamp of the trading-time expiry). Adds `horizon`, `is_experimental`, `data_status_at_issue`. A **trigger blocks UPDATE of every column except `status`** and blocks DELETE. |
+| `forecast_evaluations` | Insert-only. Adds `outcome` ∈ {evaluated, not_evaluable}, `not_evaluable_reason`, `actual_quote_observed_at`, `actual_provider_id`, `price_type` ∈ {mid, last}, `brier_score`, `boi_reference_rate` and `boi_reference_date` (USD/ILS display only, not scored). `actual_price` is NULL when not evaluable. |
 | `trading_signals` | Insert-only except `status`. FK to `forecasts`. |
 | `paper_accounts` | Adds `account_type` ∈ {forex, gold, bitcoin, combined}. `current_balance` is a cached value, reconciled against the ledger. |
 | `paper_orders` | Adds `limit_price`, `stop_price`, `time_in_force`, `parent_position_id` (for SL/TP), `reject_reason`. A `simulated` column is always true and protected by a CHECK constraint. |
@@ -71,7 +71,8 @@ system_audit_logs, job_runs
 |---|---|
 | `user_sessions` | token_hash (SHA-256 of a 256-bit token), csrf_token_hash, user_id, created_at, expires_at, revoked_at, ip, user_agent |
 | `instrument_provider_symbols` | instrument_id, provider_id, provider_symbol, notes (e.g. "BTCUSDT – USDT quote, not USD") |
-| `data_quality_events` | instrument_id, provider_id, event_type ∈ {missing_candle, duplicate, invalid_ohlc, outlier, stale, outage, timestamp_skew, abnormal_spread}, detected_at, window_start, window_end, details_json |
+| `official_reference_rates` | instrument_id, provider_id, rate_date, rate, published_at, received_at. Unique (instrument, provider, rate_date). Reference only, never a quote. **Implemented (0003).** |
+| `data_quality_events` | **Implemented (0003).** instrument_id, provider_id, event_type ∈ {missing_candle, duplicate, invalid_ohlc, outlier, stale, outage, timestamp_skew, abnormal_spread}, detected_at, window_start, window_end, details_json |
 | `economic_series` | code, country, name, unit, frequency, source, source_url |
 | `economic_observations` | series_id, period_date, value, released_at, vintage. Unique (series_id, period_date, vintage). |
 | `technical_patterns` | instrument_id, timeframe, pattern_type, detected_at, boundaries_json, confirmation_status, invalidation_condition |

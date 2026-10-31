@@ -32,8 +32,23 @@ export type Instrument = {
   role: "primary" | "secondary";
   market_status: string;
   enabled: boolean;
-  configuration: { forecast_horizons: string[]; forecasting_enabled: boolean };
+  configuration: {
+    forecast_horizons: string[];
+    forecasting_enabled: boolean;
+    price_precision: number;
+  };
   providers: ProviderMapping[];
+};
+
+export type QuoteStatus = {
+  symbol: string;
+  provider: string | null;
+  data_status: "fresh" | "stale" | "market_closed" | "no_data";
+  signals_allowed: boolean;
+  mid: string | null;
+  last_price: string | null;
+  price_type: "mid" | "last" | null;
+  observed_at: string | null;
 };
 
 export class ApiError extends Error {

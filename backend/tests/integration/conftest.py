@@ -65,8 +65,15 @@ def db(database_url: str) -> Iterator[Session]:
         # TRUNCATE does not fire the row-level append-only trigger.
         c.execute(
             text(
-                "TRUNCATE users, user_sessions, system_audit_logs, job_runs "
-                "RESTART IDENTITY CASCADE"
+                "TRUNCATE users, user_sessions, system_audit_logs, job_runs, "
+                "market_quotes, market_candles, data_quality_events, "
+                "official_reference_rates RESTART IDENTITY CASCADE"
+            )
+        )
+        c.execute(
+            text(
+                "UPDATE market_providers SET status='not_configured', consecutive_failures=0, "
+                "capabilities='[]'::jsonb, last_success_at=NULL, last_error_at=NULL"
             )
         )
     from app.core.rate_limit import get_backend

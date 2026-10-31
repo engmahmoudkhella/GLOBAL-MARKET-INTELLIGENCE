@@ -51,7 +51,25 @@ Terminate TLS in nginx with a Let's Encrypt certificate (certbot or an ACME comp
 The production override with the 443 server block is a Phase 9 hardening task. Until then, reach the VPS only
 through an SSH tunnel (`ssh -L 8080:localhost:8080 vps`).
 
-### Provider reachability (Phase 2 entry gates G6/G7)
+### Provider reachability and contract checks (run on the VPS first)
 
-Run `scripts/check_provider_reachability.py` **on the VPS** once it exists (Phase 2) to confirm that Coinbase, Binance,
-Twelve Data, CoinGecko and the Bank of Israel are reachable from the EU region.
+```bash
+python3 scripts/check_provider_reachability.py                      # gates G6/G7: Coinbase, Binance, CoinGecko, Twelve Data host, BoI
+docker compose run --rm api python scripts/check_provider_contracts.py
+```
+
+The contract check parses live Coinbase and Bank of Israel responses with the production adapters. Run it with
+`--save DIR` to keep the raw responses as recorded fixtures.
+
+### Live ingestion
+
+Ingestion is **off by default**. To start it, set `GMI_INGESTION_ENABLED=true` in `.env` and restart `beat` and `worker`.
+Then backfill history once:
+
+```bash
+docker compose run --rm api python -m app.cli backfill-candles --symbol BTCUSD --timeframe 1h --days 365
+docker compose run --rm api python -m app.cli backfill-candles --symbol BTCUSD --timeframe 1d --days 3650
+docker compose run --rm api python -m app.cli backfill-reference --symbol USDILS --days 3650
+```
+
+Progress and failures show up in `/api/v1/admin/jobs` and `/api/v1/admin/providers`.

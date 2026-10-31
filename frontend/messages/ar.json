@@ -51,7 +51,7 @@
   },
   "overview": {
     "instruments": "الأدوات المُعدّة",
-    "noMarketData": "لا توجد بيانات سوق بعد. ربط مزوّدي البيانات في المرحلة 2.",
+    "noMarketData": "تظهر الأسعار فقط عند توفر بيانات موثّقة من مزوّد مُعدّ. لا يتم تقدير أي قيمة.",
     "primary": "أساسية",
     "secondary": "سلسلة ثانوية",
     "horizons": "آفاق التوقع",
@@ -62,6 +62,18 @@
       "reference": "مرجعي",
       "secondary": "ثانوي"
     },
-    "providerStatus": "الحالة: {status}"
+    "providerStatus": "الحالة: {status}",
+    "dataStatus": "حالة البيانات",
+    "status": {
+      "fresh": "محدّثة",
+      "stale": "قديمة – الإشارات معطّلة",
+      "market_closed": "السوق مغلق",
+      "no_data": "لا توجد بيانات بعد"
+    },
+    "observedAt": "رُصد {time} عبر {provider}",
+    "priceType": {
+      "mid": "متوسط",
+      "last": "آخر سعر"
+    }
   }
 }

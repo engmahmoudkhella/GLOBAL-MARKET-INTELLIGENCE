@@ -40,8 +40,8 @@ After expiry it adds: actual price, absolute error, percentage error, direction 
 Brier score and status.
 
 **Automatic evaluation** by a Celery job at expiry. There is no manual entry.
-- Actual price = the **last valid mid quote at or before `expires_at`, from the same provider** that supplied the
-  forecast's reference price, **no older than 5 minutes**.
+- Actual price = the **last valid quote at or before `expires_at`, from the same provider** that supplied the
+  forecast's reference price, **no older than 5 minutes**. Use its mid if bid/ask exist, otherwise its last price, and record `price_type`.
 - If the market is closed or data is stale or missing at expiry, status = **`not_evaluable`** with a machine-readable reason
   (`market_closed`, `stale_data`, `no_data`, `provider_mismatch`). **The actual price is never estimated or filled.**
 - USD/ILS rows also show the **Bank of Israel representative rate for that day** as a reference column. It is not used for scoring.
@@ -68,14 +68,25 @@ trigger test; every metric (MAE, MAPE, directional accuracy, coverage, multi-cla
   bullish/neutral/bearish outcomes. Each forecast stores its own `neutral_band` (for example ±k × expected volatility for that
   instrument and horizon) at issue time, so scoring never depends on a parameter chosen later. Brier = Σ over the 3
   classes of (p − o)² with p in [0,1] (range 0–2). The page states this definition.
-- **Expiry in closed sessions.** With a 5-minute freshness rule, USD/ILS and XAU/USD forecasts that expire during a weekend
-  would always be `not_evaluable`. Issuance will therefore align `expires_at` to the next open session time of the
-  instrument's calendar, recorded on the row. The horizon label stays nominal, and the effective horizon is stored.
-- **Mid-quote availability (O1).** The 5-minute mid-quote rule needs bid/ask from the provider. If Twelve Data
-  Grow returns only a last price for USD/ILS or XAU/USD, there is no mid quote. That must be confirmed in Phase 2
-  (together with G1/G2). If bid/ask is not available, the decision is yours: either mark those forecasts `not_evaluable`, or explicitly
-  accept the provider's last price as the evaluation basis (recorded as `price_basis` on each evaluation).
+- **Trading-time horizons (decided, §0.2a).** For USDILS and XAUUSD, horizons count open-market time on the
+  session calendar (hours of open market for 1h/4h/24h, trading days for 7d/30d). BTCUSD uses calendar time.
+  Stored per forecast: `horizon`, `horizon_basis` ∈ {trading_time, calendar_time} and `expires_at` (the calendar timestamp of
+  the trading-time expiry). A **trading day** is one session day of the instrument's calendar (for FX/gold,
+  17:00 New York to 17:00 New York with the market open). Adding N trading days lands at the same session-relative time N
+  session days later, skipping closed days and holidays once holiday data exists. The exact algorithm and its tests
+  ship in Phase 5 together with holiday calendars.
+- **Price basis (decided, §0.2a).** Mid when the provider gives bid/ask, otherwise last. `price_type` and the provider are stored
+  on each evaluation and shown in the ledger.
 - **Coinbase BTC-USD** provides best bid/ask through its ticker, so BTCUSD mid quotes are expected to be available.
+
+### 0.2a Answers received 2026-10-31 (after Phase 1)
+
+| Topic | Decision |
+|---|---|
+| Twelve Data plan | Grow tiers are $29 / $49 / $79 by credits per minute. **$29 tier (55 credits/min)** is the target. The adapter must stay within 55 credits/min. Coverage of XAU/USD and USD/ILS is **unconfirmed until the owner's own key test**. The Twelve Data adapter is **on hold** until then. |
+| Track Record price basis | Use **mid = (bid+ask)/2 when the provider gives bid and ask, otherwise the provider's last price**. Every evaluation stores `price_type` ∈ {mid, last} and the provider, and the ledger shows both. (Closes O1.) |
+| Forecast horizons for USDILS and XAUUSD | **Measured in trading time** on the instrument's session calendar. 1h/4h/24h = that many **hours of open market**. 7d/30d = that many **trading days**. Each forecast stores both the trading-time expiry definition and its calendar timestamp (`expires_at`). **BTCUSD stays in calendar time (24/7).** If data is stale at expiry, the row is still `not_evaluable`. Expiries are **not** shifted to the next open. |
+| Coinbase / Binance reachability | Checked from the Frankfurt VPS once it exists (`scripts/check_provider_reachability.py`). Binance stays secondary. |
 
 ### 0.3 Phase 2 entry gates (must be verified before Phase 2 code depends on them)
 
@@ -85,7 +96,7 @@ A pre-check on 2026-10-31 used web-search snippets only, because the provider si
 |---|---|---|
 | G1 Twelve Data Grow includes **XAU/USD** (real-time or delayed?) | **Unconfirmed** | Grow is listed as including commodities, but XAU/USD on Grow is not explicitly confirmed. Ask Twelve Data support or test with the key. |
 | G2 Twelve Data Grow includes **USD/ILS** | **Unconfirmed** | The pair is in their catalogue. One snippet mentions real-time forex as an add-on. |
-| G3 Twelve Data Grow price and credits | **Unconfirmed** | Grow appears tiered (about $29 to $79/month depending on credits per minute). Rate limits are per minute only, with no daily cap on Grow. The adapter must respect the per-minute credit budget. |
+| G3 Twelve Data Grow price and credits | **Resolved** | $29 tier, 55 credits/min (owner). The adapter must respect the per-minute credit budget. |
 | G4 Twelve Data licence fits use | **Consistent** | Support article: Basic/Grow data is for personal, non-commercial use and must not be displayed or redistributed to third parties. This matches D2. **The dashboard must not be shared with other people.** |
 | G5 Coinbase Exchange market-data terms | **Unconfirmed** | Public endpoints need no auth (`api.exchange.coinbase.com`, about 10 req/s per IP). Use is governed by the Coinbase "Market Data Terms of Use". Personal-use wording not yet read. |
 | G6 Coinbase reachable from EU VPS | **To test on VPS** | No geo restriction found. Servers are reported to be in AWS us-east-1, so expect latency from Frankfurt. |

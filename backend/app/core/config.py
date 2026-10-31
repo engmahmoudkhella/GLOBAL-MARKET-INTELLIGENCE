@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     rate_limit_default_per_minute: int = 300
     trust_proxy_headers: bool = False
 
+    # Live ingestion (Phase 2). Off by default so tests/dev never call providers implicitly.
+    ingestion_enabled: bool = False
+
     # Display default (storage is always UTC). Decision D8.
     default_timezone: str = "Asia/Gaza"
 

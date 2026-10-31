@@ -8,6 +8,7 @@ COPY backend/pyproject.toml backend/uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 
 COPY backend/ ./
+COPY scripts/check_provider_contracts.py ./scripts/
 RUN useradd --system --uid 10001 gmi && chown -R gmi /app
 USER gmi
 ENV PATH="/app/.venv/bin:$PATH"
