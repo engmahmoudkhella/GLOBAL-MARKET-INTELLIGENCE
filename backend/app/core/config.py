@@ -53,9 +53,10 @@ class Settings(BaseSettings):
     # USD/ILS cross-check: Twelve Data price near BoI publication vs BoI representative rate.
     boi_crosscheck_threshold_pct: Decimal = Field(default=Decimal("0.5"), gt=0)
     boi_crosscheck_window_minutes: int = Field(default=15, ge=1, le=120)
-    # Used when the BoI response carries no publication timestamp (SDMX history).
-    # ASSUMPTION to verify against BoI's published schedule.
-    boi_publication_fallback_time: time = time(15, 30)
+    # BoI publication time (Asia/Jerusalem) used only when the response has no timestamp
+    # (SDMX history). The PublicApi `lastUpdate` is used whenever present. ASSUMPTION: 12:30,
+    # from one observation (lastUpdate 2026-10-30T10:21:03Z = 12:21 Israel time).
+    boi_publication_fallback_time: time = time(12, 30)
 
     # Display default (storage is always UTC). Decision D8.
     default_timezone: str = "Asia/Gaza"

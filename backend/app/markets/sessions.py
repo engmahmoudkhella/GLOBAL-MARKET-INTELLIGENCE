@@ -7,6 +7,7 @@ holiday closures are not known and gap detection may report them as missing data
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
@@ -20,10 +21,17 @@ def _seconds(t: time) -> int:
     return t.hour * 3600 + t.minute * 60 + t.second
 
 
+Closure = tuple[datetime, datetime]
+
+
 class MarketCalendar:
-    def __init__(self, cfg: SessionCalendar) -> None:
+    def __init__(self, cfg: SessionCalendar, closures: Sequence[Closure] = ()) -> None:
         self.cfg = cfg
         self.tz = ZoneInfo(cfg.timezone)
+        self.closures = tuple(sorted(closures))
+
+    def in_closure(self, ts: datetime) -> bool:
+        return any(a <= ts < b for a, b in self.closures)
 
     @property
     def is_continuous(self) -> bool:
@@ -32,6 +40,8 @@ class MarketCalendar:
     def is_open(self, ts: datetime) -> bool:
         if ts.tzinfo is None:
             raise ValueError("timestamp must be timezone-aware")
+        if self.in_closure(ts):
+            return False
         if self.cfg.kind == "continuous":
             return True
         assert self.cfg.weekly_open is not None and self.cfg.weekly_close is not None
@@ -58,7 +68,7 @@ class MarketCalendar:
 
     def is_open_during(self, start: datetime, length: timedelta) -> bool:
         """True if the market is open at any minute boundary in [start, start + length)."""
-        if self.is_continuous:
+        if self.is_continuous and not self.closures:
             return True
         step = timedelta(minutes=1) if length <= timedelta(hours=4) else timedelta(minutes=15)
         t = start

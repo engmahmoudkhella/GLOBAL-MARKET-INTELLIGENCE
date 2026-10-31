@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from typing import Any
 
 import httpx
@@ -30,7 +31,16 @@ from app.providers.models import (
     Quote,
     Timeframe,
 )
-from app.providers.parsing import load_json, require, to_decimal, to_utc
+from app.providers.parsing import (
+    load_json,
+    note_unknown_fields,
+    require,
+    to_decimal,
+    to_decimal_str,
+    to_utc,
+)
+
+TICKER_FIELDS = frozenset({"ask", "bid", "volume", "trade_id", "price", "size", "time"})
 
 NAME = "coinbase"
 BASE_URL = "https://api.exchange.coinbase.com"
@@ -75,14 +85,16 @@ class CoinbaseExchangeProvider(MarketDataProvider):
 
     def get_latest_quote(self, provider_symbol: str) -> Quote:
         data, received = self._get(f"/products/{provider_symbol}/ticker")
-        # `time` is the time of the last trade; bid/ask are the book at response time.
+        # Recorded 2026-10-31: bid/ask/price are strings; `time` has 6 or 9 fractional digits.
+        # `time` is the last trade time; bid/ask are the book at response time.
+        note_unknown_fields(NAME, "ticker", data, TICKER_FIELDS)
         return Quote(
             provider_symbol=provider_symbol,
             observed_at=to_utc(NAME, require(NAME, data, "time"), "time"),
             received_at=received,
-            bid=to_decimal(NAME, require(NAME, data, "bid"), "bid"),
-            ask=to_decimal(NAME, require(NAME, data, "ask"), "ask"),
-            last_price=to_decimal(NAME, require(NAME, data, "price"), "price"),
+            bid=to_decimal_str(NAME, require(NAME, data, "bid"), "bid"),
+            ask=to_decimal_str(NAME, require(NAME, data, "ask"), "ask"),
+            last_price=to_decimal_str(NAME, require(NAME, data, "price"), "price"),
         )
 
     def _candles(
@@ -116,22 +128,35 @@ class CoinbaseExchangeProvider(MarketDataProvider):
     def _parse_candle(
         self, symbol: str, timeframe: Timeframe, row: Any, received: datetime
     ) -> Candle:
-        # Documented row format: [time, low, high, open, close, volume]
+        # Recorded 2026-10-31: [time, LOW, HIGH, OPEN, CLOSE, volume], JSON numbers, newest
+        # first. Columns are mapped explicitly by position and the order is asserted.
         if not isinstance(row, list) or len(row) != 6:
             raise ProviderDataError(NAME, f"candle row must have 6 fields, got {row!r}")
-        ts, low, high, open_, close, volume = row
+        ts = row[0]
         if isinstance(ts, bool) or not isinstance(ts, int):
             raise ProviderDataError(NAME, f"candle time must be integer epoch seconds: {ts!r}")
+        for i, v in enumerate(row[1:], start=1):
+            if isinstance(v, (bool, str)) or not isinstance(v, (int, Decimal)):
+                raise ProviderDataError(NAME, f"candle column {i} must be a JSON number: {v!r}")
+        low = to_decimal(NAME, row[1], "low")
+        high = to_decimal(NAME, row[2], "high")
+        open_ = to_decimal(NAME, row[3], "open")
+        close = to_decimal(NAME, row[4], "close")
+        volume = to_decimal(NAME, row[5], "volume", positive=False)
+        if not (low <= min(open_, close) and max(open_, close) <= high):
+            raise ProviderDataError(
+                NAME, f"candle {ts}: expected low <= open,close <= high (column order changed?)"
+            )
         open_time = datetime.fromtimestamp(ts, UTC)
         return Candle(
             provider_symbol=symbol,
             timeframe=timeframe,
             open_time=open_time,
-            open=to_decimal(NAME, open_, "open"),
-            high=to_decimal(NAME, high, "high"),
-            low=to_decimal(NAME, low, "low"),
-            close=to_decimal(NAME, close, "close"),
-            volume=to_decimal(NAME, volume, "volume", positive=False),
+            open=open_,
+            high=high,
+            low=low,
+            close=close,
+            volume=volume,
             received_at=received,
             is_complete=open_time + TIMEFRAME_DELTA[timeframe] <= received,
         )

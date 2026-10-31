@@ -47,6 +47,7 @@ class IssueType(StrEnum):
     OUT_OF_SESSION = "out_of_session"
     INCOMPLETE_SOURCE = "incomplete_source"
     REFERENCE_DIVERGENCE = "reference_divergence"
+    MISSING_REFERENCE = "missing_reference"
 
 
 @dataclass(frozen=True)

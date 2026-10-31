@@ -74,3 +74,44 @@ def check_budget(
         else f"fits: peak {peak}/min, {day}/day"
     )
     return BudgetCheck(not problems, peak, day, lim_min, lim_day, msg)
+
+
+def check_against_plan(
+    schedule: TwelveDataSchedule,
+    configured_per_minute: int,
+    configured_per_day: int,
+    headroom: Decimal,
+    plan_per_minute: int,
+    plan_per_day: int,
+    plan_category: str,
+) -> BudgetCheck:
+    """Compare configuration with the plan reported by /api_usage, then re-check the schedule
+    against the *actual* plan limits. plan_per_day/configured_per_day: 0 = no daily cap."""
+    problems = []
+    if configured_per_minute > plan_per_minute:
+        problems.append(
+            f"configured {configured_per_minute} credits/min exceeds the "
+            f"{plan_category} plan's {plan_per_minute}/min"
+        )
+    if plan_per_day > 0 and (configured_per_day == 0 or configured_per_day > plan_per_day):
+        problems.append(
+            f"configured daily limit "
+            f"{configured_per_day or 'unlimited'} exceeds the {plan_category} "
+            f"plan's {plan_per_day}/day"
+        )
+    actual = check_budget(schedule, plan_per_minute, plan_per_day, headroom)
+    if not actual.ok:
+        problems.append(actual.message)
+    msg = (
+        ("Twelve Data plan check failed: " + "; ".join(problems))
+        if problems
+        else f"plan {plan_category} ok: {actual.message}"
+    )
+    return BudgetCheck(
+        not problems,
+        actual.peak_per_minute,
+        actual.per_day,
+        actual.limit_per_minute,
+        actual.limit_per_day,
+        msg,
+    )

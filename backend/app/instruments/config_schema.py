@@ -42,6 +42,9 @@ class SessionCalendar(_Strict):
     weekly_open: WeeklyBoundary | None = None
     weekly_close: WeeklyBoundary | None = None
     daily_breaks: tuple[DailyBreak, ...] = ()
+    holiday_calendar: Literal["fx", "xau"] | None = Field(
+        default=None, description="Key into market_holidays; closures make the market closed."
+    )
     provisional: bool = Field(
         default=True,
         description="True until replaced by provider-defined sessions and holiday data (Phase 2).",

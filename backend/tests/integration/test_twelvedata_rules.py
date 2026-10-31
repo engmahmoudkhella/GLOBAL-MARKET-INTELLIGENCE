@@ -335,10 +335,10 @@ def test_crosscheck_ignores_suspect_quotes_and_falls_back_to_candle(db):
 
 def test_crosscheck_without_data(db):
     assert crosscheck.crosscheck_boi(db, DAY).status == "no_reference"
-    add_ref(db, DAY, "3.719")  # no published_at -> fallback 15:30 Asia/Jerusalem
+    add_ref(db, DAY, "3.719")  # no published_at -> fallback 12:30 Asia/Jerusalem (assumption)
     r = crosscheck.crosscheck_boi(db, DAY)
     assert r.status == "no_market_price"
-    assert r.reference_time == datetime(2026, 11, 4, 13, 30, tzinfo=UTC)  # IST = UTC+2
+    assert r.reference_time == datetime(2026, 11, 4, 10, 30, tzinfo=UTC)  # IST = UTC+2
 
 
 # ---------------------------------------------------------------- API + tasks

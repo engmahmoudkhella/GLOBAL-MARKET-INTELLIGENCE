@@ -6,6 +6,7 @@ from app.models.instrument import Instrument, InstrumentProviderSymbol, MarketPr
 from app.models.market import (
     DataQualityEvent,
     MarketCandle,
+    MarketHoliday,
     MarketQuote,
     OfficialReferenceRate,
 )
@@ -19,6 +20,7 @@ __all__ = [
     "InstrumentProviderSymbol",
     "JobRun",
     "MarketCandle",
+    "MarketHoliday",
     "MarketQuote",
     "MarketProvider",
     "OfficialReferenceRate",

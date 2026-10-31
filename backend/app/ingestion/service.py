@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 
 from app.core.clock import utcnow
 from app.instruments.config_schema import InstrumentConfig
+from app.markets.calendars import market_calendar
 from app.markets.sessions import MarketCalendar
 from app.models import (
     DataQualityEvent,
@@ -63,6 +64,7 @@ class IngestResult:
     statuses: dict[str, int] = field(default_factory=dict)
     issues: int = 0
     error: str | None = None
+    dropped_incomplete: int = 0
 
     def count(self, status: str) -> None:
         self.statuses[status] = self.statuses.get(status, 0) + 1
@@ -79,7 +81,7 @@ def resolve(session: Session, symbol: str, provider_name: str) -> Target:
         raise LookupError(f"{provider_name} is not mapped to {symbol}")
     inst, prov, mapping = row
     cfg = InstrumentConfig.model_validate(inst.configuration_json)
-    return Target(inst, prov, mapping.provider_symbol, cfg, MarketCalendar(cfg.sessions))
+    return Target(inst, prov, mapping.provider_symbol, cfg, market_calendar(session, cfg))
 
 
 # ------------------------------------------------------------------ provider health
@@ -252,7 +254,11 @@ def ingest_candles(
     t = resolve(session, symbol, adapter.name)
     result = IngestResult(ok=True)
     with provider_call(session, t.provider, adapter, result):
-        candles = adapter.get_intraday_ohlcv(t.provider_symbol, timeframe, start, end)
+        fetched = adapter.get_intraday_ohlcv(t.provider_symbol, timeframe, start, end)
+        # A candle whose end is after the response time is still forming: drop it, never store
+        # a partial bar (owner decision 2026-10-31). It is fetched again once complete.
+        candles = [c for c in fetched if c.is_complete]
+        result.dropped_incomplete = len(fetched) - len(candles)
         prev = [
             c
             for c in session.scalars(
@@ -432,6 +438,7 @@ def ingest_reference_rates(
                         rate=r.rate,
                         published_at=r.published_at,
                         received_at=r.received_at,
+                        attributes_json=dict(r.extra),
                     )
                 )
                 session.flush()
@@ -460,8 +467,70 @@ def ingest_reference_rates(
             else:
                 if existing.published_at is None and r.published_at is not None:
                     existing.published_at = r.published_at
+                missing_attrs = {
+                    k: v for k, v in r.extra.items() if k not in existing.attributes_json
+                }
+                if missing_attrs:
+                    existing.attributes_json = {**existing.attributes_json, **missing_attrs}
                 result.skipped += 1
+        if t.provider.provider_name == "boi":
+            session.flush()
+            result.issues += record_reference_gaps(session, t, start, end)
     return result
+
+
+def record_reference_gaps(session: Session, t: Target, start: date, end: date) -> int:
+    """Expected BoI publication days (Mon-Fri minus 'boi' holidays) up to the latest stored
+    rate that have no rate. Recorded once per day as `missing_reference`; never filled."""
+    from app.markets.calendars import boi_publication_days, israel_day_start
+
+    stored = set(
+        session.scalars(
+            select(OfficialReferenceRate.rate_date).where(
+                OfficialReferenceRate.instrument_id == t.instrument.id,
+                OfficialReferenceRate.provider_id == t.provider.id,
+                OfficialReferenceRate.rate_date >= start,
+                OfficialReferenceRate.rate_date <= end,
+            )
+        )
+    )
+    if not stored:
+        return 0
+    new = 0
+    for day in boi_publication_days(session, start, max(stored)):
+        if day in stored:
+            continue
+        ws = israel_day_start(day)
+        exists = session.scalar(
+            select(DataQualityEvent.id)
+            .where(
+                DataQualityEvent.instrument_id == t.instrument.id,
+                DataQualityEvent.provider_id == t.provider.id,
+                DataQualityEvent.event_type == IssueType.MISSING_REFERENCE.value,
+                DataQualityEvent.window_start == ws,
+            )
+            .limit(1)
+        )
+        if exists is None:
+            _event(
+                session,
+                QualityIssue(
+                    IssueType.MISSING_REFERENCE,
+                    "suspect",
+                    f"no BoI representative rate for business day {day.isoformat()}",
+                    ws,
+                    {
+                        "rate_date": day.isoformat(),
+                        "window_start": ws.isoformat(),
+                        "window_end": (ws + timedelta(days=1)).isoformat(),
+                    },
+                ),
+                instrument_id=t.instrument.id,
+                provider_id=t.provider.id,
+                now=utcnow(),
+            )
+            new += 1
+    return new
 
 
 # ------------------------------------------------------------------ freshness
@@ -506,7 +575,7 @@ def freshness(session: Session, symbol: str, now: datetime | None = None) -> Fre
             .order_by(MarketQuote.observed_at.desc())
             .limit(1)
         )
-    status = rules.data_status(last, now, cfg.staleness_seconds, MarketCalendar(cfg.sessions))
+    status = rules.data_status(last, now, cfg.staleness_seconds, market_calendar(session, cfg))
     return Freshness(
         symbol,
         primary.provider_name if primary else None,

@@ -18,7 +18,9 @@ from sqlalchemy import (
     Integer,
     Numeric,
     String,
+    Text,
     UniqueConstraint,
+    func,
     text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
@@ -132,3 +134,31 @@ class OfficialReferenceRate(Base):
     rate: Mapped[Decimal] = mapped_column(PRICE, nullable=False)
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    # Provider attributes stored raw and uninterpreted (e.g. SDMX RELEASE_STATUS='YP').
+    attributes_json: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb")
+    )
+
+
+class MarketHoliday(Base):
+    """Closure window for a holiday calendar ('fx', 'xau', 'boi')."""
+
+    __tablename__ = "market_holidays"
+    __table_args__ = (
+        CheckConstraint("closed_until > closed_from", name="closed_range"),
+        CheckConstraint("calendar IN ('fx','xau','boi')", name="calendar"),
+        UniqueConstraint("calendar", "closed_from", name="uq_market_holiday"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    calendar: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    closed_from: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    closed_until: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    source: Mapped[str] = mapped_column(Text, nullable=False)
+    is_assumption: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("true")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- BROWSER COPY, NOT BYTE-EXACT. Series/Obs elements and attributes copied by the owner from the
+     browser tree view of GET https://edge.boi.org.il/FusionEdgeServer/sdmx/v2/data/dataflow/
+     BOI.STATISTICS/EXR/1.0/RER_USD_ILS?startperiod=2026-10-20 on 2026-10-31 (~10:56 UTC).
+     The message/Header/DataSet wrapper below is RECONSTRUCTED from the owner's description
+     (message:StructureSpecificData, SDMX-ML 2.1, dataflow BOI.STATISTICS:EXR(1.0),
+     dimensionAtObservation TIME_PERIOD, Prepared 2026-10-31T10:56:27Z,
+     ReportingBegin 2026-10-20T00:00:00, ReportingEnd 2026-10-30T23:59:59).
+     Use for STRUCTURE ONLY; re-record the raw response from the VPS. -->
+<message:StructureSpecificData xmlns:message="http://www.sdmx.org/resources/sdmxml/schemas/v2_1/message" xmlns:common="http://www.sdmx.org/resources/sdmxml/schemas/v2_1/common" xmlns:ss="http://www.sdmx.org/resources/sdmxml/schemas/v2_1/data/structurespecific" xmlns:ns1="urn:sdmx:org.sdmx.infomodel.datastructure.Dataflow=BOI.STATISTICS:EXR(1.0):ObsLevelDim:TIME_PERIOD">
+<message:Header><message:Prepared>2026-10-31T10:56:27Z</message:Prepared><message:ReportingBegin>2026-10-20T00:00:00</message:ReportingBegin><message:ReportingEnd>2026-10-30T23:59:59</message:ReportingEnd></message:Header>
+<message:DataSet ss:dataScope="DataStructure" ss:structureRef="BOI_STATISTICS_EXR_1_0">
+<Series SERIES_CODE="RER_USD_ILS" FREQ="D" BASE_CURRENCY="USD" COUNTER_CURRENCY="ILS" UNIT_MEASURE="ILS" DATA_TYPE="OF00" TIME_COLLECT="V" DATA_SOURCE="BOI_MRKT" UNIT_MULT="0" CONF_STATUS="F" PUB_WEBSITE="Y">
+<Obs TIME_PERIOD="2026-10-20" OBS_VALUE="3.106" RELEASE_STATUS="YP"/>
+<Obs TIME_PERIOD="2026-10-21" OBS_VALUE="3.091" RELEASE_STATUS="YP"/>
+<Obs TIME_PERIOD="2026-10-22" OBS_VALUE="3.107" RELEASE_STATUS="YP"/>
+<Obs TIME_PERIOD="2026-10-23" OBS_VALUE="3.112" RELEASE_STATUS="YP"/>
+<Obs TIME_PERIOD="2026-10-26" OBS_VALUE="3.078" RELEASE_STATUS="YP"/>
+<Obs TIME_PERIOD="2026-10-28" OBS_VALUE="3.128" RELEASE_STATUS="YP"/>
+<Obs TIME_PERIOD="2026-10-29" OBS_VALUE="3.114" RELEASE_STATUS="YP"/>
+<Obs TIME_PERIOD="2026-10-30" OBS_VALUE="3.118" RELEASE_STATUS="YP"/>
+</Series>
+</message:DataSet>
+</message:StructureSpecificData>

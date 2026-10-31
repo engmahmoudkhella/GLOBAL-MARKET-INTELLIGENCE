@@ -15,6 +15,7 @@ never appears in a URL or log line.
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -41,6 +42,7 @@ from app.providers.models import (
 from app.providers.parsing import epoch_seconds, load_json, require, to_decimal_str
 
 NAME = "twelvedata"
+FUTURE_TOLERANCE = timedelta(minutes=1)
 BASE_URL = "https://api.twelvedata.com"
 MAX_OUTPUTSIZE = 5000
 # Intraday only. 4h and 1d are derived locally from 1h with documented boundaries.
@@ -144,7 +146,10 @@ class TwelveDataProvider(MarketDataProvider):
                 },
             )
             meta = require(NAME, data, "meta")
-            if require(NAME, meta, "exchange_timezone") != "UTC":
+            # Recorded 2026-10-31: meta has NO timezone field, and without timezone=UTC the
+            # datetimes are not UTC. We always send timezone=UTC; a timezone field, if present,
+            # must say UTC, and no bar may start in the future (checked below).
+            if "exchange_timezone" in meta and meta["exchange_timezone"] != "UTC":
                 raise ProviderDataError(
                     NAME, f"expected UTC series, got {meta['exchange_timezone']}"
                 )
@@ -153,8 +158,15 @@ class TwelveDataProvider(MarketDataProvider):
             values = require(NAME, data, "values")
             if not isinstance(values, list):
                 raise ProviderDataError(NAME, "values must be a list")
-            for v in values:
-                c = self._candle(provider_symbol, timeframe, v, received)
+            parsed = [self._candle(provider_symbol, timeframe, v, received) for v in values]
+            future = [c.open_time for c in parsed if c.open_time > received + FUTURE_TOLERANCE]
+            if future:
+                raise ProviderDataError(
+                    NAME,
+                    f"bar(s) start in the future ({max(future).isoformat()} > received "
+                    f"{received.isoformat()}): datetimes are not UTC; response rejected",
+                )
+            for c in parsed:
                 if start <= c.open_time < end:
                     out[c.open_time] = c
             cursor = chunk_end
@@ -192,13 +204,52 @@ class TwelveDataProvider(MarketDataProvider):
     ) -> list[Candle]:
         return self._series(provider_symbol, timeframe, start, end)
 
+    def get_plan(self) -> TwelveDataPlan:
+        """Actual plan limits from /api_usage (recorded 2026-10-31: basic, 8/min, 800/day)."""
+        data, _ = self._get("/api_usage", {})
+        return parse_plan(data)
+
     def get_provider_status(self) -> ProviderStatus:
         sent = self.clock()
         data, received = self._get("/api_usage", {})
-        used, limit = require(NAME, data, "current_usage"), require(NAME, data, "plan_limit")
+        plan = parse_plan(data)
         return ProviderStatus(
             ok=True,
             checked_at=received,
             latency_ms=int((received - sent) / timedelta(milliseconds=1)),
-            detail=f"credits used this minute: {used}/{limit}",
+            detail=f"plan {plan.category}: {plan.current_usage}/{plan.per_minute} credits this "
+            f"minute, {plan.daily_usage}/{plan.per_day or 'unlimited'} today",
         )
+
+
+@dataclass(frozen=True)
+class TwelveDataPlan:
+    category: str
+    per_minute: int
+    per_day: int  # 0 = no daily limit reported
+    current_usage: int
+    daily_usage: int | None
+
+
+def _int_field(data: Any, key: str, *, required: bool = True) -> int | None:
+    if not required and (not isinstance(data, dict) or key not in data):
+        return None
+    v = require(NAME, data, key)
+    if isinstance(v, bool) or not isinstance(v, int) or v < 0:
+        raise ProviderDataError(NAME, f"{key}: expected non-negative integer, got {v!r}")
+    return v
+
+
+def parse_plan(data: Any) -> TwelveDataPlan:
+    per_minute = _int_field(data, "plan_limit")
+    current = _int_field(data, "current_usage")
+    assert per_minute is not None and current is not None
+    per_day = _int_field(data, "plan_daily_limit", required=False)
+    category = data.get("plan_category") if isinstance(data, dict) else None
+    return TwelveDataPlan(
+        category=str(category) if category is not None else "unknown",
+        per_minute=per_minute,
+        per_day=per_day or 0,
+        current_usage=current,
+        daily_usage=_int_field(data, "daily_usage", required=False),
+    )

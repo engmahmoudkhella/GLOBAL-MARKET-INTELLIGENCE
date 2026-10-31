@@ -150,8 +150,10 @@ def test_time_series_chunks_by_outputsize():
 
 
 def test_api_usage_status():
-    st = provider({"/api_usage": fx("twelvedata_api_usage.json")}).get_provider_status()
-    assert st.ok and st.detail == "credits used this minute: 3/8"
+    st = provider(
+        {"/api_usage": fx("twelvedata_api_usage.recorded-2026-10-31.json")}
+    ).get_provider_status()
+    assert st.ok and st.detail == "plan basic: 2/8 credits this minute, 4/800 today"
 
 
 def test_missing_key_is_refused(monkeypatch):

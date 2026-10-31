@@ -59,6 +59,24 @@ def require(provider: str, obj: Any, key: str) -> Any:
     return obj[key]
 
 
+_UNKNOWN_FIELDS_LOGGED: set[tuple[str, str, str]] = set()
+
+
+def note_unknown_fields(provider: str, endpoint: str, data: Any, known: frozenset[str]) -> None:
+    """Unknown extra fields are ignored (forward compatible) but logged once per process."""
+    import logging
+
+    if not isinstance(data, dict):
+        return
+    for key in data.keys() - known:
+        marker = (provider, endpoint, key)
+        if marker not in _UNKNOWN_FIELDS_LOGGED:
+            _UNKNOWN_FIELDS_LOGGED.add(marker)
+            logging.getLogger("app.providers").info(
+                "%s %s: ignoring unknown field %r", provider, endpoint, key
+            )
+
+
 def to_decimal_str(provider: str, value: Any, field: str, *, positive: bool = True) -> Decimal:
     """Strict variant for providers whose contract sends numbers as JSON strings."""
     if not isinstance(value, str):
